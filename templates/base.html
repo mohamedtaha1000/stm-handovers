@@ -29,9 +29,9 @@
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
           History
         </a>
-        <a href="{{ url_for('leaver') }}" class="{{ 'active' if request.endpoint == 'leaver' }}">
+        <a href="{{ url_for('resignation') }}" class="{{ 'active' if request.endpoint == 'resignation' }}">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
-          Leaver
+          Resignation
         </a>
       </nav>
       <span class="who">
@@ -80,5 +80,9 @@
     {% block content %}{% endblock %}
   </main>
 {% endblock %}
+{# Every page, so a data-tip anywhere in the app just works. #}
+<script src="{{ url_for('static', filename='tooltips.js') }}"></script>
+{# Turns every mailto: button into a real Outlook draft where it can. #}
+<script src="{{ url_for('static', filename='outlook-draft.js') }}"></script>
 </body>
 </html>

@@ -1,17 +1,17 @@
 {% extends "base.html" %}
-{% block title %}Employee leaving{% endblock %}
+{% block title %}Resignation{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1>Someone is leaving</h1>
+  <h1>Resignation</h1>
   <p class="lead">Fill these in once &mdash; both emails and the register move together.</p>
 </div>
 
 <div class="leaver-layout">
   <div class="leaver-main">
 
-    <form method="get" action="{{ url_for('leaver') }}" class="card" id="leaver-form">
+    <form method="get" action="{{ url_for('resignation') }}" class="card" id="leaver-form">
       <div class="section-title">
-        <h2>Their details</h2>
+        <h2>Who is resigning</h2>
         <span class="filled-badge partial" id="filled-badge">0 of {{ fields|length }} filled</span>
       </div>
       {#
@@ -27,7 +27,7 @@
           <input id="leaver-search" autocomplete="off"
                  data-employee-lookup
                  data-lookup-url="{{ url_for('api_leavers') }}"
-                 data-lookup-keys="name,department,email,computer_name,serial"
+                 data-lookup-keys="name,name_en,code,department,email,computer_name,serial"
                  data-lookup-email="full"
                  placeholder="Already have their file? Type a name or code to fill this in">
           <span class="lookup-flag" id="lookup-flag" hidden>Equipment filled too</span>
@@ -36,38 +36,52 @@
       <div class="grid">
         {% for f in fields %}
         <div class="field{{ ' span-2' if f.wide }}">
-          <label for="{{ f.key }}">{{ f.label }}</label>
+          <label for="{{ f.key }}">{{ f.label }}{% if f.hint %}
+            <span class="field-note">{{ f.hint }}</span>{% endif %}</label>
           <input id="{{ f.key }}" name="{{ f.key }}" value="{{ typed[f.key] }}"
-                 placeholder="{{ f.placeholder }}" autocomplete="off" data-leaver>
+                 placeholder="{{ f.placeholder }}" autocomplete="off" data-leaver
+                 {% if f.pattern %}pattern="{{ f.pattern }}" title="{{ f.pattern_msg or '' }}"{% endif %}
+                 {% if f.options %}list="{{ f.key }}-options"{% endif %}>
+          {% if f.options %}
+          <datalist id="{{ f.key }}-options">
+            {% for option in f.options %}<option value="{{ option }}"></option>{% endfor %}
+          </datalist>
+          {% endif %}
         </div>
         {% endfor %}
       </div>
       <div class="form-actions">
-        <button type="submit" id="leaver-submit">Update the emails</button>
+        <button type="submit" id="leaver-submit"
+                data-tip="Rebuild both email drafts from what is typed above.">Update the emails</button>
       </div>
     </form>
 
     <div class="card">
       <div class="section-title"><h2>Send and close out</h2></div>
       {#
-        One button for the whole errand: both drafts open and the
-        register is updated. It only appears when the page can script it,
-        because without JavaScript there is no way to do three things on
-        one click - the two links and the register's own button still
-        work then.
+        One button for the whole errand. It asks the app to open both
+        drafts in Outlook directly, which is the only way one press can
+        open two: a browser hands the mail client one mailto per click
+        and drops the rest. Where that is not possible it falls back to
+        a press per email and says why. It only appears when the page
+        can script it - the two links and the register's own button
+        still work without JavaScript.
       #}
       <div class="do-it" id="do-it" hidden>
-        <button type="button" class="button full" id="do-both">
+        <button type="button" class="button full" id="do-both"
+                data-tip="Records them on the Resignation sheet, releases any laptop they hold, and opens both drafts in Outlook for you to read and send.">
           <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>
-          Open both emails &amp; mark as left
+          <span id="do-both-label">Mark as left &amp; open both emails</span>
         </button>
+        <p class="do-it-where{{ ' unset' if not addresses.ok }}">{{ addresses.text }}</p>
         <p class="do-it-note" id="do-it-note" role="status"></p>
       </div>
       <p class="or-line" id="or-line" hidden>or open them one at a time</p>
       <div class="leaver-actions">
         {% for m in messages %}
         <a class="leaver-button" href="{{ links[m.key] }}"
-           data-mailto="{{ token_links[m.key] }}">
+           data-mailto="{{ token_links[m.key] }}"
+           data-tip="Opens this one draft only, and does not touch the register. {{ m.hint }}.">
           <span class="leaver-button-text">
             <b>{{ m.label }}</b>
             <span>{{ m.hint }}</span>
@@ -111,13 +125,20 @@
     var CLAUSE_TEMPLATE = {{ clause_template|tojson }};
     var LABELS = {{ fields|map(attribute='label')|list|tojson }};
     var KEYS = {{ fields|map(attribute='key')|list|tojson }};
+    var MAILS = {{ messages|map(attribute='label')|list|tojson }};
 
     function refresh() {
       var values = {}, empty = [];
       KEYS.forEach(function (key, i) {
         var box = form.querySelector('[name="' + key + '"]');
         values[key] = box ? box.value.trim() : '';
-        if (!values[key]) empty.push(LABELS[i]);
+        /* Wrong script counts as not filled: the server refuses it
+           either way, and a live button over a value about to be
+           rejected is worse than one that stays off. */
+        var wrong = box && values[key] && box.pattern
+          && !new RegExp('^(?:' + box.pattern + ')$', 'u').test(values[key]);
+        if (box) box.classList.toggle('is-wrong', !!wrong);
+        if (!values[key] || wrong) empty.push(LABELS[i]);
       });
 
       /* The department appears in the sentence as well as the details,
@@ -135,7 +156,7 @@
         el.href = url;
       });
 
-      /* Nothing sends until all five are there. An email that names a
+      /* Nothing sends until every box is filled. An email that names a
          person but leaves their serial blank is worse than no email:
          it reads as complete and quietly is not. */
       setReady(empty.length === 0, empty);
@@ -161,7 +182,7 @@
         blanks.hidden = ready;
         blanks.textContent = ready ? ''
           : 'Waiting on ' + (empty || []).join(', ')
-            + ' — the buttons turn on once all five are filled in.';
+            + ' — the buttons turn on once all ' + KEYS.length + ' are filled in.';
       }
     }
 
@@ -214,24 +235,35 @@
       });
     }
 
-    /* The one-click errand: mark them as left, then open both drafts.
+    /* The whole errand in one press - with a second press in reserve.
      *
-     * Order matters. The register is updated FIRST and its answer waited
-     * for, because that is the part that must not be lost - handing the
-     * browser two external-protocol links is the unreliable half. Both
-     * openings happen inside the same click: Chrome keeps a click's
-     * "user activation" alive for about five seconds, and a second
-     * mailto fired outside that window is silently dropped. The gap
-     * between them is what stops Outlook from swallowing the second one
-     * while it is still starting up.
+     * One press is the point, and the app does it by asking Outlook for
+     * both drafts itself rather than handing the browser two mailto
+     * links. A browser hands the mail client at most ONE mailto per
+     * click and drops the rest without a word, so two from one press is
+     * not something a link can do at all; Outlook, asked directly, has
+     * no such limit.
      *
-     * If Outlook only opens once, the two links below still work: they
-     * are left on the page on purpose rather than hidden behind this.
+     * That needs Outlook on the same machine as the app, so it cannot
+     * be assumed. When the answer comes back saying it did not happen,
+     * the button falls back to what a browser can do: this press opens
+     * the first draft, and one more press opens the second. It says so
+     * on the button and gives the reason, rather than quietly opening
+     * one and looking broken.
+     *
+     * Either way the register is updated first and its answer waited
+     * for: that is the part that must not be lost.
+     *
+     * Editing any box sends the button back to the start - the drafts
+     * would no longer match what was typed.
      */
     var both = document.getElementById('do-both');
+    var label = document.getElementById('do-both-label');
     var note = document.getElementById('do-it-note');
     var wrap = document.getElementById('do-it');
     var orLine = document.getElementById('or-line');
+    var sent = 0;          /* how many drafts this press has opened */
+    var marked = false;    /* whether the resignation is already written down */
 
     function open_mailto(url) {
       var a = document.createElement('a');
@@ -248,19 +280,56 @@
       note.className = 'do-it-note' + (kind ? ' ' + kind : '');
     }
 
+    /* The button says which email the next press opens, so the two
+       presses never look like one that failed and was clicked again. */
+    function showStep() {
+      if (label) {
+        label.textContent =
+          sent === 0 ? 'Mark as left & open both emails'
+          : sent === 1 ? 'Now open the ' + MAILS[1] + ' email'
+          : 'Both opened — press to start over';
+      }
+      if (both) both.classList.toggle('is-second', sent === 1);
+    }
+
+    /* Back to the first press. The register is left alone - they have
+       still left - but the drafts are reopened from the new values. */
+    function resetSteps() {
+      if (sent === 0) return;
+      sent = 0;
+      marked = false;
+      showStep();
+      say('The details changed, so the emails were rebuilt — open them again.');
+    }
+
     if (both) {
       wrap.hidden = false;
       if (orLine) orLine.hidden = false;
+      showStep();
+
       both.addEventListener('click', function () {
         if (both.disabled) return;
-        var urls = Array.prototype.map.call(links, function (el) { return el.href; });
-        var body = new URLSearchParams({ format: 'json' });
+
+        /* Second press: straight to Outlook, nothing awaited, so the
+           click's own permission to launch it is still good. */
+        if (sent === 1) {
+          open_mailto(links[1].href);
+          sent = 2;
+          showStep();
+          say('Both drafts are open in Outlook'
+              + (marked ? ' and the resignation is recorded.' : '.')
+              + ' Send them when you are happy with them.', 'good');
+          return;
+        }
+
+        var first = links[0].href;
+        var body = new URLSearchParams({ format: 'json', open: 'outlook' });
         KEYS.forEach(function (key) {
           var box = form.querySelector('[name="' + key + '"]');
           body.append(key, box ? box.value.trim() : '');
         });
         both.disabled = true;
-        say('Opening Outlook…');
+        say('Updating the register…');
         fetch('{{ url_for("mark_left") }}', {
           method: 'POST', credentials: 'same-origin', body: body,
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
@@ -271,6 +340,7 @@
           .then(function (r) { return r.json().catch(function () { return {}; }); })
           .catch(function () { return { error: 'The register could not be reached.' }; })
           .then(function (result) {
+            both.disabled = false;
             if (result.incomplete) {
               /* The server disagrees that this is ready to send - the
                  page was edited, or the boxes were emptied between the
@@ -279,16 +349,33 @@
               say(result.message, 'bad');
               return;
             }
-            open_mailto(urls[0]);
-            setTimeout(function () { open_mailto(urls[1]); }, 1200);
-            setTimeout(function () {
+            marked = !!result.recorded;
+            var said = result.message || result.error || '';
+
+            /* Outlook opened both itself: the errand is finished. */
+            if (result.opened) {
+              sent = 2;
+              showStep();
               refresh();
-              say((result.message || result.error || '')
-                  + ' Both drafts should be open in Outlook — '
-                  + 'if only one appeared, use the links below for the other.',
-                  result.marked ? 'good' : '');
               lookUpHoldings();
-            }, 1400);
+              say(said + ' Both drafts are open in Outlook — '
+                  + 'send them when you are happy with them.',
+                  result.recorded ? 'good' : '');
+              return;
+            }
+
+            /* It could not, so this falls back to what the browser can
+               do: one draft now, one on the next press. */
+            open_mailto(first);
+            sent = 1;
+            showStep();
+            refresh();
+            lookUpHoldings();
+            say(said + ' The ' + MAILS[0] + ' draft is open. '
+                + 'Press again for the ' + MAILS[1] + ' email — '
+                + 'a browser only opens one per click. '
+                + (result.reason || ''),
+                result.recorded ? 'good' : '');
           });
       });
     }
@@ -300,6 +387,7 @@
     });
 
     form.addEventListener('input', lookUpHoldings);
+    form.addEventListener('input', resetSteps);
     form.addEventListener('input', refresh);
     /* Submitting is what makes the page work without JavaScript. With it
        the links are already current, so the button has nothing to do. */

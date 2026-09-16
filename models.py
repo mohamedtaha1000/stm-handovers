@@ -70,6 +70,16 @@ class Departure(db.Model):
     # national ID behind it, the name as a last resort.
     identity = db.Column(db.String(160), unique=True, index=True)
     name = db.Column(db.String(200))
+    # Typed on the leaver page. Kept here because someone can leave
+    # without ever having had a document generated for them, and then
+    # this is the only place their department and email exist - the
+    # resignation sheet would otherwise show their name and four blanks.
+    code = db.Column(db.String(60))
+    # The English spelling, for the emails and for the sheet's own
+    # column - the Arabic name above is what the register matches on.
+    name_en = db.Column(db.String(200))
+    department = db.Column(db.String(120))
+    email = db.Column(db.String(200))
     left_on = db.Column(db.String(20))
     recorded_by = db.Column(db.String(120))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -105,3 +115,14 @@ def create_all_and_migrate():
                 conn.execute(text("ALTER TABLE handover ADD COLUMN updated_by VARCHAR(120)"))
             if "updated_at" not in existing_cols:
                 conn.execute(text("ALTER TABLE handover ADD COLUMN updated_at DATETIME"))
+
+    if "departure" in inspector.get_table_names():
+        existing_cols = {c["name"] for c in inspector.get_columns("departure")}
+        with db.engine.begin() as conn:
+            for column, kind in (("code", "VARCHAR(60)"),
+                                 ("name_en", "VARCHAR(200)"),
+                                 ("department", "VARCHAR(120)"),
+                                 ("email", "VARCHAR(200)")):
+                if column not in existing_cols:
+                    conn.execute(text(
+                        f"ALTER TABLE departure ADD COLUMN {column} {kind}"))

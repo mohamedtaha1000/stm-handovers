@@ -50,6 +50,17 @@ def employee_identity(record):
     return code or govid or (record.name or "").strip().lower()
 
 
+def typed_identity(name, code=""):
+    """How to file a departure for someone with no documents on record.
+
+    The same chain employee_identity uses, minus the national ID, which
+    the leaver page does not ask for. So if a document is ever generated
+    for them afterwards it lands on the same person rather than a second
+    one.
+    """
+    return code.strip().lower() or (name or "").strip().lower()
+
+
 def known_employees(limit=400):
     """One entry per person, taken from their most recent document.
 
@@ -153,6 +164,9 @@ def leaver_lookup(limit=400):
             continue
         people.append({
             "name": name,
+            # Carried forward so it is typed once per person rather than
+            # once per document - the whole reason it can be asked for.
+            "name_en": (fields.get("name_en") or "").strip(),
             "department": (fields.get("department") or newest.department or "").strip(),
             "email": (fields.get("email") or "").strip(),
             "computer_name": computer,
@@ -162,13 +176,19 @@ def leaver_lookup(limit=400):
     return people
 
 
+def departures_by_identity():
+    """Everyone marked as having left, keyed the way the rest of the app
+    recognises a person."""
+    return {d.identity: d for d in Departure.query.all()}
+
+
 def register_rows():
     """Every laptop assignment the register knows about, built from the
     documents and the people who have left. Lives here rather than in
     app.py because it is the same question matching_laptops asks."""
     records = Handover.query.all()
-    departures = {d.identity: d for d in Departure.query.all()}
-    return asset_register.build_rows(records, employee_identity, departures)
+    return asset_register.build_rows(records, employee_identity,
+                                     departures_by_identity())
 
 
 def matching_laptops(name="", serial="", code=""):

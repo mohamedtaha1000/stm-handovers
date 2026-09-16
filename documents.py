@@ -73,7 +73,7 @@ def generated_filename(template_id, name, date_obj, exclude=None):
     return candidate
 
 
-def collect_values(template_id, form):
+def collect_values(template_id, form, existing=None):
     """Read this template's fields out of a submitted form, validate them,
     and return (values, fill_data, date_obj, errors). `errors` empty means
     the submission is good."""
@@ -102,6 +102,21 @@ def collect_values(template_id, form):
             continue
         if not re.fullmatch(pattern, values[f["key"]]):
             errors.append(f.get("pattern_msg") or f"{f['label']} is not the right format.")
+
+    # Closed lists (the laptop model). A <select> can be edited away in
+    # the developer tools like anything else, so the same rule is applied
+    # here. `existing` is what the document being edited already says:
+    # a record made before the list existed keeps its value rather than
+    # being held hostage by it, but nothing NEW can be invented.
+    kept = existing or {}
+    for f in fields:
+        if not (f.get("strict") and f.get("options")):
+            continue
+        value = values.get(f["key"], "")
+        allowed = set(f["options"]) | {(kept.get(f["key"]) or "").strip()}
+        if value and value not in allowed:
+            errors.append(f"{f['label']} must be one of: "
+                          + ", ".join(f["options"]) + ".")
 
     # Email field (only some templates have one): always force the
     # @stm.com.eg domain - only the part before an "@" (if the person

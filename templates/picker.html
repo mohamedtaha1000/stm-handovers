@@ -31,10 +31,12 @@
       <div class="picker-grid">
         {% for tid, spec in members %}
         <div class="picker-card" data-card data-search="{{ spec.label|lower }} {{ spec.label_ar }} {{ group_name|lower }}">
-          <label class="picker-tick" title="Add {{ spec.label }} to a combined set">
+          <label class="picker-tick"
+                 data-tip="Tick this to make {{ spec.label }} as part of one set — you fill the employee details once and every ticked document is made from them.">
             <input type="checkbox" name="template_id" value="{{ tid }}">
           </label>
-          <a class="picker-main" href="{{ url_for('new_document', template_id=tid, employee=employee) }}">
+          <a class="picker-main" href="{{ url_for('new_document', template_id=tid, employee=employee) }}"
+             data-tip="Fill in one {{ spec.label }} now. Opens the form for this document type on its own.">
             <span class="picker-icon">
               <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">{{ spec.icon|safe }}</svg>
             </span>
@@ -57,8 +59,10 @@
       <b><span id="batch-n">0</span> documents selected</b>
       <span id="batch-names">You'll fill the employee details once</span>
     </div>
-    <button type="button" class="button-secondary" id="batch-clear">Clear</button>
-    <button type="submit">
+    <button type="button" class="button-secondary" id="batch-clear"
+            data-tip="Untick everything and start choosing again. Nothing has been made yet.">Clear</button>
+    <button type="submit"
+            data-tip="Go to one form that covers every ticked document. The employee details are asked once and used for all of them.">
       Continue
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
     </button>

@@ -27,13 +27,19 @@ nothing is collected twice, and a field the documents have no source for
 left out rather than printed as an empty row.
 """
 
-from datetime import datetime
+from html import escape
+
+import email_html
 
 from templates import TEMPLATES
 
-# The employee lines, in the order the team writes them. Only fields the
-# documents actually record are here; "Preferred Name" is derived from
-# the full name and "Start Date" from the document's own date.
+# The employee lines, in the order the team writes them.
+#
+# Six, and only these six. A start date and a preferred name used to be
+# worked out and added here - the date from the document, the preferred
+# name from the first two words of the full name - but neither is
+# something the team asked for, and a row nobody reads is a row that
+# makes the table harder to scan. They are gone.
 #
 # The national ID is on the document but deliberately NOT in the email:
 # it is masked everywhere else in the app, and an unencrypted mail is not
@@ -44,9 +50,7 @@ EMPLOYEE_LINES = (
     ("Position Title", "role"),
     ("Department", "department"),
     ("Phone Number", "mobile"),
-    ("Start Date", "start_date"),
-    ("Preferred Name", "preferred_name"),
-    ("Suggested Email", "email"),
+    ("Email", "email"),
 )
 
 # "Company" is on every document but is the same Arabic company name
@@ -97,49 +101,43 @@ def detail_label(key, label, heading=""):
     return column_heading(" ".join(words))
 
 
-def format_start_date(value):
-    """1-Sep-26, the way the team writes it. Accepts the "D/M/YYYY" the
-    records store as well as an ISO date; anything unparseable is passed
-    through untouched rather than guessed at."""
-    text = (value or "").strip()
-    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
-        try:
-            parsed = datetime.strptime(text, fmt)
-        except ValueError:
-            continue
-        return f"{parsed.day}-{parsed.strftime('%b')}-{parsed.strftime('%y')}"
-    return text
+def display_name(record):
+    """The name this message calls the person.
+
+    The English one, because the message is in English - falling back to
+    the Arabic name for records made before that box existed, so an old
+    document still produces a usable email rather than a blank line.
+    """
+    return (record.fields.get("name_en") or "").strip() or record.name
 
 
-def fallback_preferred_name(full_name):
-    """Someone's first two names, which is what a preferred name usually
-    turns out to be - used only when the field was left empty."""
-    parts = [p for p in (full_name or "").split() if p]
-    return " ".join(parts[:2])
+def employee_rows(record):
+    """The employee block as (label, value) pairs.
+
+    One description of what the block IS, so the plain-text list and the
+    table are two renderings of the same thing and cannot drift apart. A
+    detail the documents have no source for is left out rather than
+    printed as an empty row.
+    """
+    fields = record.fields
+    rows = []
+    for label, key in EMPLOYEE_LINES:
+        # The name is a column of its own on the record; everything else
+        # is whatever that document type collected.
+        value = display_name(record) if key == "name" else (fields.get(key) or "").strip()
+        if value:
+            rows.append((label, value))
+    return rows
 
 
 def employee_lines(record):
-    """The employee block: "Label: value" for every detail that has one."""
-    fields = record.fields
-    lines = []
-    for label, key in EMPLOYEE_LINES:
-        if key == "name":
-            value = record.name
-        elif key == "start_date":
-            # The handover date on the document: someone collects their
-            # equipment on the day they start.
-            value = format_start_date(record.handover_date)
-        elif key == "preferred_name":
-            value = (fields.get(key) or "").strip() or fallback_preferred_name(record.name)
-        else:
-            value = (fields.get(key) or "").strip()
-        if value:
-            lines.append(f"{label}: {value}")
-    return lines
+    """The employee block as "Label: value" lines, for the plain text."""
+    return [f"{label}: {value}" for label, value in employee_rows(record)]
 
 
 def device_sections(record):
-    """The equipment blocks for one document: (heading, lines) pairs.
+    """The equipment blocks for one document: (heading, rows) pairs,
+    where each row is (label, value).
 
     Usually one - "Laptop details" - but a replacement has two, the
     device going back and the device going out.
@@ -162,16 +160,16 @@ def device_sections(record):
 
     sections = []
     for title, group in groups:
-        lines = []
+        rows = []
         for _, f in sorted(enumerate(group), key=rank):
             key = f["key"]
             if key in SKIP_DEVICE_KEYS:
                 continue
             value = (fields.get(key) or "").strip()
             if value:
-                lines.append(f"{detail_label(key, f['label'], title)}: {value}")
-        if lines:
-            sections.append((title, lines))
+                rows.append((detail_label(key, f["label"], title), value))
+        if rows:
+            sections.append((title, rows))
     return sections
 
 
@@ -180,7 +178,8 @@ def subject_for(records):
     spec = TEMPLATES.get(first.template_id)
     label = spec["label"] if spec else first.template_label
     code = (first.fields.get("code") or "").strip()
-    who = f"{first.name} ({code})" if code else first.name
+    shown = display_name(first)
+    who = f"{shown} ({code})" if code else shown
     if len(records) > 1:
         return f"Equipment handover — {who}"
     return f"{label} — {who}"
@@ -246,11 +245,47 @@ def build_body(records, greeting_name, detailed=None):
     lines = [f"Dear {greeting_name},", "", opening_line(records), ""]
     lines += section("Employee details", employee_lines(records[0]))
     for record in detailed:
-        for heading, detail in device_sections(record):
-            lines += section(heading, detail)
+        for title, rows in device_sections(record):
+            lines += section(title, [f"{label}: {value}" for label, value in rows])
     left_out = [short_name(r) for r in records[len(detailed):]]
     if left_out:
         listed = (", ".join(left_out[:-1]) + " and " + left_out[-1]
                   if len(left_out) > 1 else left_out[0])
         lines += [f"The {listed} details are on their own handover documents.", ""]
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------- HTML
+#
+# The same message for a draft Outlook is asked to open itself, where
+# the details can be ruled tables rather than framed lists. The framing
+# below exists only because plain text has no bold; in HTML the heading
+# simply is bold, so the equals signs go.
+#
+# How a table looks is not decided here - email_html renders every
+# message this app sends, so they all look like they came from the same
+# place.
+
+def build_html(records, greeting_name, detailed=None):
+    """The whole message as HTML: one employee table, then one table per
+    piece of equipment.
+
+    `detailed` exists for the plain-text version, which has a length a
+    mail client will refuse. A draft opened through Outlook has no such
+    limit, so this is normally called with everything - but it is
+    honoured either way rather than quietly disagreeing with the text.
+    """
+    detailed = records if detailed is None else detailed
+    parts = [email_html.paragraph(escape(f"Dear {greeting_name},")),
+             email_html.paragraph(escape(opening_line(records))),
+             email_html.section("Employee details", employee_rows(records[0]))]
+    for record in detailed:
+        for title, rows in device_sections(record):
+            parts.append(email_html.section(title, rows))
+    left_out = [short_name(r) for r in records[len(detailed):]]
+    if left_out:
+        listed = (", ".join(left_out[:-1]) + " and " + left_out[-1]
+                  if len(left_out) > 1 else left_out[0])
+        parts.append(email_html.paragraph(
+            escape(f"The {listed} details are on their own handover documents.")))
+    return "".join(parts)

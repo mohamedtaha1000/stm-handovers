@@ -91,7 +91,11 @@
       item.className = 'lookup-item';
       item.setAttribute('role', 'option');
       item.dataset.index = i;
-      var bits = [person.code, person.department].filter(Boolean).join(' · ');
+      /* The English spelling is shown as well as the Arabic one: it is
+         what most people type to search, and a suggestion that comes
+         back in a script you did not type looks like the wrong person. */
+      var bits = [person.name_en, person.code, person.department]
+        .filter(Boolean).join(' · ');
       item.innerHTML = '<span class="lookup-name"></span>' +
                        (bits ? '<span class="lookup-meta"></span>' : '');
       item.querySelector('.lookup-name').textContent = person.name;
@@ -109,13 +113,20 @@
     if (q.length < 2) { close(); return; }
     load(opts.url).then(function (people) {
       if (document.activeElement !== input) return;
+      /* Either spelling finds them. Someone whose documents are in
+         Arabic is still looked up by typing the English name, which is
+         the one on most keyboards. */
       var matches = people.filter(function (p) {
-        return (p.name || '').toLowerCase().indexOf(q) !== -1 ||
-               (p.code || '').toLowerCase().indexOf(q) !== -1;
+        return ['name', 'name_en', 'code'].some(function (key) {
+          return (p[key] || '').toLowerCase().indexOf(q) !== -1;
+        });
       }).slice(0, 6);
       /* Nothing to offer if the only match is exactly what is typed. */
       if (matches.length === 1 &&
-          (matches[0].name || '').toLowerCase() === q) { close(); return; }
+          [(matches[0].name || '').toLowerCase(),
+           (matches[0].name_en || '').toLowerCase()].indexOf(q) !== -1) {
+        close(); return;
+      }
       render(input, matches, opts);
     });
   }

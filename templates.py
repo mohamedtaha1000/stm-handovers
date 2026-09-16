@@ -20,10 +20,31 @@ DOC_TEMPLATES_DIR = BASE_DIR / "doc_templates"
 # The employee half of every form - the same seven questions whatever
 # the document is. Named here because it is a fact about the registry:
 # it is exactly the union of every spec's employee_fields.
-EMPLOYEE_KEYS = ("name", "department", "role", "mobile", "email", "code", "govid")
+EMPLOYEE_KEYS = ("name", "name_en", "department", "role", "mobile", "email",
+                 "code", "govid")
 
 # Printed in the Company field unless someone changes it on the form.
 DEFAULT_COMPANY = "اس تي ام للاستثمار"
+
+# Lists offered on the form. A field with "options" becomes a box you can
+# pick from OR type into - never a closed dropdown, because the day a new
+# department is created or a new laptop model is bought is exactly the day
+# someone needs to record one, and being unable to would stop the document
+# rather than tidy it.
+#
+# Edit these two lists and every form that uses them follows.
+DEPARTMENTS = (
+    "Sales", "Administration", "IT", "Operations", "Sports", "Leads Club",
+    "Retail", "People and Culture", "Legal", "Finance",
+)
+
+# Laptops only. A headset or a router has its own model, and offering
+# E14 there would be noise.
+#
+# Unlike the departments, this list is CLOSED: the model boxes are real
+# dropdowns and nothing else is accepted, in the browser or on the
+# server. Adding a model is a one-line edit here.
+LAPTOP_MODELS = ("E14", "E16")
 
 # ----------------------------------------------------------------------
 # Template registry - the single source of truth for the "pick a
@@ -37,8 +58,46 @@ DEFAULT_COMPANY = "اس تي ام للاستثمار"
 # form.html (so most people see the browser's inline error before ever
 # submitting); "pattern_msg" is the human-readable explanation shown by
 # both when a value doesn't match.
-_NAME = {"key": "name", "label": "Full name", "placeholder": "e.g. Ahmed Ali Mohamed", "required": True}
-_DEPARTMENT = {"key": "department", "label": "Department", "placeholder": "IT, Finance, Sales…", "required": True}
+# The two names, and why there are two.
+#
+# The documents are Arabic, so the name printed in them has to be the
+# Arabic one - that is the whole point of the templates. The emails are
+# English, and an Arabic name dropped into an English sentence reads
+# badly and cannot be searched for in a mailbox.
+#
+# They cannot be derived from each other. Arabic script does not write
+# short vowels, so محمد is Mohamed, Mohammed, Muhammad and Mohammad all
+# at once, and no library can tell which spelling a person actually
+# uses. So both are asked for, once, and the lookup copies them forward
+# to every later document for that person.
+#
+# Each box refuses the other's script. Typing the English name into the
+# Arabic box is the easy mistake, and it would quietly produce an Arabic
+# document with a Latin name in it.
+_ARABIC_LETTERS = r"[\u0621-\u063A\u0640-\u064A\u066E-\u06D3 ]+"
+_LATIN_LETTERS = r"[A-Za-z][A-Za-z .'\-]*"
+
+_NAME = {
+    "key": "name", "label": "Full name (Arabic)",
+    "placeholder": "محمد شعبان ابراهيم", "required": True,
+    "pattern": _ARABIC_LETTERS,
+    "hint": "Arabic",
+    "pattern_msg": "The full name goes in the document itself, which is Arabic — "
+                   "so this box takes Arabic letters only. The English spelling "
+                   "goes in the next box.",
+}
+_NAME_EN = {
+    "key": "name_en", "label": "Name in English",
+    "placeholder": "Mohamed Shaban Ibrahim", "required": True,
+    "pattern": _LATIN_LETTERS,
+    "hint": "English",
+    "pattern_msg": "This is the name the emails use, so it takes English letters "
+                   "only (spaces, hyphens and apostrophes are fine). The Arabic "
+                   "spelling goes in the box before it.",
+}
+_DEPARTMENT = {"key": "department", "label": "Department",
+               "placeholder": "Pick one, or type a new one", "required": True,
+               "options": DEPARTMENTS}
 _ROLE = {"key": "role", "label": "Position", "placeholder": "Software Engineer", "required": True}
 _MOBILE = {
     "key": "mobile", "label": "Mobile", "placeholder": "01xxxxxxxxx", "required": True,
@@ -65,8 +124,9 @@ _GOVID = {
     "pattern_msg": "National ID must be exactly 14 digits.",
 }
 
-EMPLOYEE_FIELDS_WITH_EMAIL = [_NAME, _DEPARTMENT, _ROLE, _MOBILE, _EMAIL, _CODE, _GOVID]
-EMPLOYEE_FIELDS_NO_EMAIL = [_NAME, _DEPARTMENT, _ROLE, _MOBILE, _CODE, _GOVID]
+EMPLOYEE_FIELDS_WITH_EMAIL = [_NAME, _NAME_EN, _DEPARTMENT, _ROLE, _MOBILE,
+                              _EMAIL, _CODE, _GOVID]
+EMPLOYEE_FIELDS_NO_EMAIL = [_NAME, _NAME_EN, _DEPARTMENT, _ROLE, _MOBILE, _CODE, _GOVID]
 
 TEMPLATES = {
     "laptop_handover": {
@@ -80,7 +140,8 @@ TEMPLATES = {
         "employee_fields": EMPLOYEE_FIELDS_WITH_EMAIL,
         "device_title": "Laptop details",
         "device_fields": [
-            {"key": "model", "label": "Laptop model", "placeholder": "E14", "required": True},
+            {"key": "model", "label": "Laptop model", "placeholder": "E14",
+             "required": True, "options": LAPTOP_MODELS, "strict": True},
             {"key": "serial", "label": "Serial number", "placeholder": "PF5K...", "required": True},
             {"key": "cpu", "label": "CPU", "placeholder": "I5 / I7", "required": True},
         ],
@@ -102,7 +163,8 @@ TEMPLATES = {
         "employee_fields": EMPLOYEE_FIELDS_WITH_EMAIL,
         "device_title": "Old device (being returned)",
         "device_fields": [
-            {"key": "old_model", "label": "Old model", "placeholder": "E14", "required": True},
+            {"key": "old_model", "label": "Old model", "placeholder": "E14",
+             "required": True, "options": LAPTOP_MODELS, "strict": True},
             {"key": "old_serial", "label": "Old serial number", "placeholder": "PF5K...", "required": True},
             {"key": "old_color", "label": "Old color", "placeholder": "BLACK", "required": True},
             {"key": "old_storage", "label": "Old storage", "placeholder": "512SSD", "required": True},
@@ -111,7 +173,8 @@ TEMPLATES = {
         ],
         "device_title_2": "New device (being issued)",
         "device_fields_2": [
-            {"key": "new_model", "label": "New model", "placeholder": "E14", "required": True},
+            {"key": "new_model", "label": "New model", "placeholder": "E14",
+             "required": True, "options": LAPTOP_MODELS, "strict": True},
             {"key": "new_serial", "label": "New serial number", "placeholder": "PF5K...", "required": True},
             {"key": "new_color", "label": "New color", "placeholder": "BLACK", "required": True},
             {"key": "new_storage", "label": "New storage", "placeholder": "512SSD", "required": True},

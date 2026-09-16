@@ -18,6 +18,7 @@ them, and that only works if they are read at call time:
 """
 
 import os
+import re
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -36,6 +37,18 @@ DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{INSTANCE_DIR / 'hando
 TEAM_PASSWORD = os.environ.get("TEAM_PASSWORD") or "changeme"
 SECRET_KEY = os.environ.get("SECRET_KEY")
 
+def addresses(raw):
+    """One recipient or several, however they were written.
+
+    Outlook separates addresses with semicolons and a mailto: URL with
+    commas, and nobody filling in an environment variable should have to
+    know which - so both are accepted here, and each side is handed the
+    one it wants. Blanks and stray separators are dropped, so a trailing
+    ";" is not an empty recipient.
+    """
+    return [piece.strip() for piece in re.split(r"[;,]", raw or "") if piece.strip()]
+
+
 # Who the "this has been handed over" email is addressed to.
 NOTIFY_TO = os.environ.get("HANDOVER_NOTIFY_TO", "").strip()
 NOTIFY_NAME = os.environ.get("HANDOVER_NOTIFY_NAME", "Eng. Hegazy").strip()
@@ -46,6 +59,22 @@ NOTIFY_NAME = os.environ.get("HANDOVER_NOTIFY_NAME", "Eng. Hegazy").strip()
 # faster than writing it out by hand.
 EMS_TO = os.environ.get("HANDOVER_EMS_TO", "").strip()
 LEAVER_TO = os.environ.get("HANDOVER_LEAVER_TO", "").strip()
+
+# Whether the app may open drafts in Outlook itself rather than handing
+# the browser a mailto: link.
+#
+#   auto   (default) only for a browser on this same machine, worked out
+#          from the address the request came in on
+#   always trust it wherever the request came from - for the case where
+#          the app is reached by its machine's own network name or IP
+#          rather than by localhost, where "auto" cannot tell
+#   never  always use the mailto: link
+#
+# "always" is only ever right when this app is used from the machine it
+# runs on: the drafts open next to the APP, so a colleague at another
+# desk would get nothing and someone would get two windows they did not
+# ask for.
+OUTLOOK_DRAFTS = os.environ.get("HANDOVER_OUTLOOK", "auto").strip().lower()
 
 # The laptop register. Beside the app by default, so on a machine where
 # the folder is synced it simply appears - no download step, no second

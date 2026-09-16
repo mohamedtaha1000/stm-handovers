@@ -122,6 +122,7 @@ documents.py             Form -> validated values -> filled .docx -> row
 employees.py             Who a person is across their documents, and
                          what they still hold
 asset_register.py        The laptop register spreadsheet
+                         (Laptops and Leavers sheets)
 notify_email.py          The "this has been handed over" message
 leaver_email.py          The two messages sent when someone leaves
 app.py                   Flask application: routes and the web layer only

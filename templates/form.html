@@ -67,8 +67,10 @@
       <b id="bar-summary">{{ spec.label }}</b>
       <span id="bar-status"></span>
     </div>
-    <a class="button-secondary" href="{% if record %}{{ url_for('history') }}{% else %}{{ url_for('index') }}{% endif %}">Cancel</a>
-    <button type="submit" id="submit-btn">
+    <a class="button-secondary" href="{% if record %}{{ url_for('history') }}{% else %}{{ url_for('index') }}{% endif %}"
+       data-tip="Go back without saving. {% if record %}The document stays as it is.{% else %}Nothing is written and no document is made.{% endif %}">Cancel</a>
+    <button type="submit" id="submit-btn"
+            data-tip="{% if record %}Rewrite the Word document with these details and update its row in the history. The old file is replaced.{% else %}Fill the official Word document, save it, and add it to the history.{% endif %}">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
       <span class="btn-label">{% if record %}Save changes{% elif duplicate %}Generate anyway{% else %}Generate document{% endif %}</span>
     </button>

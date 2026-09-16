@@ -23,7 +23,8 @@
   {% for f in fields %}
   <input type="hidden" name="{{ f.key }}" value="{{ typed[f.key] }}">
   {% endfor %}
-  <button type="submit" class="button-secondary">Mark as left</button>
+  <button type="submit" class="button-secondary"
+          data-tip="Record them as resigned and release these serials back to the pool, without opening either email.">Mark as left</button>
 </form>
 {% else %}
 <p class="leaver-none">Nothing on file for this person &mdash; the two emails still work.</p>

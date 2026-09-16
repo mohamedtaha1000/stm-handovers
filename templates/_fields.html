@@ -25,6 +25,21 @@
            autocomplete="off">
     <span class="suffix">{{ f.suffix }}</span>
   </div>
+  {% elif f.strict and f.options %}
+  {# A closed list: these are the only values there are, so it is a real
+     dropdown rather than a box with suggestions. A value already stored
+     that is not on the list is kept and offered, so editing an older
+     document cannot silently change what it says. #}
+  {% set current = data.get(key, data.get(f.key, '')) %}
+  <select id="{{ key }}" name="{{ key }}" {% if f.required %}required{% endif %}>
+    <option value="">Choose {{ f.label|lower }}…</option>
+    {% for option in f.options %}
+    <option value="{{ option }}" {% if current == option %}selected{% endif %}>{{ option }}</option>
+    {% endfor %}
+    {% if current and current not in f.options %}
+    <option value="{{ current }}" selected>{{ current }} — already on this document</option>
+    {% endif %}
+  </select>
   {% else %}
   <input id="{{ key }}" name="{{ key }}" type="{{ f.type or 'text' }}"
          {% if f.required %}required{% endif %}
@@ -33,7 +48,16 @@
          {% if f.maxlength %}maxlength="{{ f.maxlength }}"{% endif %}
          {% if f.pattern %}pattern="{{ f.pattern }}" title="{{ f.pattern_msg or '' }}"{% endif %}
          {% if f.key in ('name', 'code') %}data-employee-lookup autocomplete="off"{% endif %}
+         {# A list to pick from that can still be typed past: the browser
+            shows the known values and accepts anything else, which is
+            what a new department or a newly bought model needs. #}
+         {% if f.options %}list="{{ key }}-options" autocomplete="off"{% endif %}
          placeholder="{{ f.placeholder or '' }}">
+  {% if f.options %}
+  <datalist id="{{ key }}-options">
+    {% for option in f.options %}<option value="{{ option }}"></option>{% endfor %}
+  </datalist>
+  {% endif %}
   {% endif %}
 </div>
 {% endmacro %}

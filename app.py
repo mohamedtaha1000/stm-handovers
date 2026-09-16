@@ -44,6 +44,7 @@ from templates import (
 import builders
 import notify_email
 import leaver_email
+import outlook_com
 import asset_register
 import documents
 import employees
@@ -53,8 +54,9 @@ from documents import (
     generated_filename, scoped_form, stamp_record, write_document,
 )
 from employees import (
-    employee_identity, equipment_summary, find_duplicate,
+    departures_by_identity, employee_identity, equipment_summary, find_duplicate,
     known_employees, leaver_lookup, matching_laptops, register_rows,
+    typed_identity,
 )
 from models import Handover, Departure, create_all_and_migrate, db
 
@@ -248,6 +250,17 @@ def active_filters(q, type_filter, date_from, date_to):
 
 
 
+def matches_query(person, query):
+    """Whether a lookup entry answers to what was typed.
+
+    Both names are searched. Someone whose documents are in Arabic is
+    still found by typing the English spelling - which is the one on
+    most keyboards, and the one people remember from the mailbox.
+    """
+    return any(query in (person.get(key) or "").lower()
+               for key in ("name", "name_en", "code", "department"))
+
+
 @app.route("/api/employees")
 @login_required
 def api_employees():
@@ -255,10 +268,7 @@ def api_employees():
     query = request.args.get("q", "").strip().lower()
     people = known_employees()
     if query:
-        people = [p for p in people
-                  if query in p["name"].lower()
-                  or query in p["code"].lower()
-                  or query in p["department"].lower()]
+        people = [p for p in people if matches_query(p, query)]
     return {"employees": people[:8]}
 
 
@@ -409,7 +419,10 @@ def edit_document(record_id):
         return redirect(url_for("history"))
 
     if request.method == "POST":
-        values, fill_data, date_obj, errors = collect_values(template_id, request.form)
+        # What this document already says is allowed to stay, so a record
+        # made before a list was closed is still editable.
+        values, fill_data, date_obj, errors = collect_values(
+            template_id, request.form, existing=record.fields)
         if errors:
             for message in errors:
                 flash(message, "error")
@@ -608,7 +621,8 @@ def build_mailto(records, detailed):
         records, greeting_name=settings.NOTIFY_NAME, detailed=detailed)
     query = urlencode({"subject": notify_email.subject_for(records), "body": body},
                       quote_via=quote)
-    return f"mailto:{quote(settings.NOTIFY_TO, safe='@.')}?{query}"
+    return (f"mailto:{quote(','.join(settings.addresses(settings.NOTIFY_TO)), safe='@.,')}"
+            f"?{query}")
 
 
 def mailto_link(records):
@@ -774,7 +788,8 @@ def refresh_register():
     saying plainly rather than reporting as an error.
     """
     try:
-        asset_register.write_workbook(register_rows(), settings.REGISTER_PATH)
+        asset_register.write_workbook(register_rows(), settings.REGISTER_PATH,
+                                      departures=departures_by_identity())
         return None
     except PermissionError:
         return (f"The laptop register ({settings.REGISTER_PATH.name}) is open in Excel, "
@@ -794,17 +809,60 @@ def register_updated():
         flash(problem, "info")
 
 
+def notify_draft(records):
+    """The handover notification, addressed and written out both ways.
+
+    The plain text is trimmed to what a mailto: link can carry; this is
+    not, because Outlook opened directly has no such limit. So the draft
+    that opens here is the whole message, tables and all, even where the
+    link would have had to leave equipment out.
+    """
+    return {"to": "; ".join(settings.addresses(settings.NOTIFY_TO)),
+            "subject": notify_email.subject_for(records),
+            "body": notify_email.build_body(records, settings.NOTIFY_NAME),
+            "html": notify_email.build_html(records, settings.NOTIFY_NAME)}
+
+
+@app.route("/notify/open", methods=["POST"])
+@login_required
+def open_notification():
+    """Open the handover notification in Outlook itself.
+
+    The page falls back to its own mailto: link when this says no, so a
+    refusal is an answer rather than an error: the only real failure is
+    being asked about documents that are not there.
+    """
+    wanted = [int(i) for i in request.form.getlist("id") if i.isdigit()]
+    records = (Handover.query.filter(Handover.id.in_(wanted)).all()
+               if wanted else [])
+    if not records:
+        return {"opened": False,
+                "reason": "Those documents could not be found."}, 404
+    # Back into the order they were asked for, so the message reads the
+    # way the page that asked for it does.
+    records.sort(key=lambda r: wanted.index(r.id))
+    opened, reason = open_drafts_here([notify_draft(records)])
+    return {"opened": opened, "reason": reason}
+
+
 @app.route("/register.xlsx")
 @login_required
 def download_register():
     """The file itself. It lives beside the app, but the app may be on a
-    different machine from whoever wants to read it."""
+    different machine from whoever wants to read it.
+
+    Rebuilt before it is sent rather than only when missing. It used to
+    only build the file if it was absent, which meant a register written
+    by an older version of this app - a column short, or a sheet short -
+    was handed over unchanged and looked like a bug in the app. If the
+    rebuild fails because the file is open in Excel, the copy already on
+    disk is sent instead: slightly stale beats nothing.
+    """
     from flask import send_file
-    if not settings.REGISTER_PATH.exists():
-        problem = refresh_register()
-        if problem:
-            flash(problem, "error")
-            return redirect(url_for("history"))
+    problem = refresh_register()
+    if problem and not settings.REGISTER_PATH.exists():
+        flash(problem, "error")
+        return redirect(url_for("history"))
     return send_file(
         settings.REGISTER_PATH, as_attachment=True,
         download_name=f"laptop-register-{date.today().isoformat()}.xlsx",
@@ -855,22 +913,103 @@ def api_leavers():
     query = request.args.get("q", "").strip().lower()
     people = leaver_lookup()
     if query:
-        people = [p for p in people
-                  if query in p["name"].lower()
-                  or query in p["code"].lower()
-                  or query in p["department"].lower()]
+        people = [p for p in people if matches_query(p, query)]
     return {"employees": people[:8]}
 
 
+def leaver_drafts(person):
+    """The two messages, addressed and written out both ways, from one
+    set of details. Everything that opens them starts here, so the
+    wording cannot drift between the two: Outlook takes the HTML, where
+    the details are a table, and a mailto: link takes the plain text,
+    where they are bullets."""
+    return [{"key": m["key"],
+             # Outlook's own separator, whatever was typed in .env.
+             "to": "; ".join(settings.addresses(LEAVER_RECIPIENTS.get(m["key"], ""))),
+             "subject": m["subject"](person),
+             "body": m["body"](person),
+             "html": m["html"](person)}
+            for m in leaver_email.MESSAGES]
+
+
 def leaver_links(person):
-    """A mailto: for each of the two messages, from one set of details."""
-    links = {}
-    for message in leaver_email.MESSAGES:
-        to = LEAVER_RECIPIENTS.get(message["key"], "")
-        query = urlencode({"subject": message["subject"](person),
-                           "body": message["body"](person)}, quote_via=quote)
-        links[message["key"]] = f"mailto:{quote(to, safe='@.')}?{query}"
-    return links
+    """The same two messages as a mailto: each, for the page's fallback
+    links and for browsers that have to open them one at a time."""
+    return {d["key"]: "mailto:{}?{}".format(
+                # A mailto: URL separates them with commas, not semicolons.
+                quote(",".join(settings.addresses(d["to"])), safe="@.,"),
+                urlencode({"subject": d["subject"], "body": d["body"]},
+                          quote_via=quote))
+            for d in leaver_drafts(person)}
+
+
+# The environment variable behind each address, so the page can name the
+# one to set rather than just saying an address is missing.
+LEAVER_SETTINGS = {"ems": "HANDOVER_EMS_TO", "resignation": "HANDOVER_LEAVER_TO"}
+
+
+def leaver_addresses():
+    """One line saying who each draft is addressed to, for above the
+    button.
+
+    A missing recipient is not an error - the draft still opens, and
+    Outlook simply asks who it is for - but it is far better known
+    before the press than discovered in a half-written email after it.
+    So the line leads with what will happen and ends with the fix.
+    """
+    named = [(m["label"], settings.addresses(LEAVER_RECIPIENTS.get(m["key"], "")),
+              LEAVER_SETTINGS.get(m["key"], ""))
+             for m in leaver_email.MESSAGES]
+    unset = [(label, var) for label, to, var in named if not to]
+    if not unset:
+        return {"ok": True,
+                "text": " · ".join(f"{label} → {', '.join(to)}"
+                                   for label, to, _ in named)}
+    if len(unset) == len(named):
+        return {"ok": False,
+                "text": "Both drafts will open with an empty To line — set "
+                        + " and ".join(var for _, var in unset)
+                        + " in your .env file, then restart the app."}
+    label, var = unset[0]
+    return {"ok": False,
+            "text": f"The {label} draft will open with an empty To line — "
+                    f"set {var} in your .env file, then restart the app."}
+
+
+def open_drafts_here(drafts):
+    """Put these drafts in front of the person. Returns (opened, reason)
+    - reason being why not, for the page to show.
+
+    Only for a browser on this machine: the drafts open in the Outlook
+    the APP is running next to, so a colleague opening this page from
+    their own desk would otherwise pop windows up on somebody else's
+    screen. They get the mailto: fallback instead, which opens on theirs.
+    """
+    setting = settings.OUTLOOK_DRAFTS
+    if setting == "never":
+        return False, ("Opening drafts in Outlook is switched off "
+                       "(HANDOVER_OUTLOOK=never in your .env file).")
+    if setting != "always" and request.remote_addr not in ("127.0.0.1", "::1"):
+        # Reached over the network. That is usually a colleague at
+        # another desk, but it is also what it looks like when this app
+        # is opened on its OWN machine by its network name or IP rather
+        # than localhost - which "auto" has no way to tell apart. Hence
+        # the address in the message, and the setting to override it.
+        return False, (f"This page was opened from {request.remote_addr} rather "
+                       f"than from this machine, so the draft would appear on "
+                       f"this app's Outlook rather than yours. If this IS the "
+                       f"same machine, set HANDOVER_OUTLOOK=always in your .env "
+                       f"file and restart.")
+    problem = outlook_com.open_drafts(drafts)
+    return problem is None, problem or ""
+
+
+def opened_in_outlook(typed):
+    """The leaver page's own press: both drafts at once, but only when
+    the page asked for it."""
+    if request.form.get("open") != "outlook":
+        return False, ""
+    return open_drafts_here(leaver_drafts(typed))
 
 
 
@@ -891,86 +1030,139 @@ def api_holdings():
     }
 
 
-@app.route("/leaver/left", methods=["POST"])
+@app.route("/resignation/record", methods=["POST"])
 @login_required
 def mark_left():
-    """Record that someone has gone, and rebuild the register around it.
-
-    Stored against the same identity the rest of the app uses, so it
-    follows the person rather than one document: everything they were
-    ever issued flips to Left together.
-    """
-    # The page's own button asks for JSON: it is opening Outlook twice in
-    # the same click and must not navigate away to a redirect. The plain
+    """Close someone out: record that they have gone, and - when this
+    machine can - open both drafts in Outlook from the same press."""
+    # The page's own button asks for JSON: it stays where it is and shows
+    # the answer, rather than navigating away to a redirect. The plain
     # form POST (no JavaScript) still gets the redirect and the flash.
     wants_json = request.form.get("format") == "json"
 
-    # The page greys its buttons out until all five details are there.
-    # That is a courtesy, not a guard: anything a browser enforces can be
-    # turned off in the developer tools, and this request writes to the
+    # The page greys its buttons out until every detail is there. That is
+    # a courtesy, not a guard: anything a browser enforces can be turned
+    # off in the developer tools, and this request writes to the
     # register. So the same rule is checked here, where it cannot be
     # edited away, and the request is refused rather than half-applied.
     typed = {f["key"]: request.form.get(f["key"], "").strip()
              for f in leaver_email.FORM_FIELDS}
     missing = [f["label"] for f in leaver_email.FORM_FIELDS if not typed[f["key"]]]
+    # The two name boxes each refuse the other's script. Checked here as
+    # well as in the browser, for the same reason everything else on this
+    # page is: a pattern attribute can be deleted in the developer tools.
+    wrong = [f["pattern_msg"] for f in leaver_email.FORM_FIELDS
+             if f.get("pattern") and typed[f["key"]]
+             and not re.fullmatch(f["pattern"], typed[f["key"]])]
+    if wrong and not missing:
+        message = "Nothing was changed: " + " ".join(wrong)
+        if wants_json:
+            return {"marked": 0, "message": message, "incomplete": wrong}, 400
+        flash(message, "error")
+        return redirect(url_for("resignation", **request.form.to_dict(flat=True)))
     if missing:
+        # Counted rather than written out, so adding a field to the form
+        # can never leave this sentence saying the wrong number.
         message = ("Nothing was changed: " + ", ".join(missing)
                    + (" is" if len(missing) == 1 else " are")
-                   + " still empty, and all five are needed before anyone can "
-                     "be marked as left.")
+                   + f" still empty, and all {len(leaver_email.FORM_FIELDS)} are "
+                     "needed before anyone can be recorded as resigned.")
         if wants_json:
             return {"marked": 0, "message": message, "incomplete": missing}, 400
         flash(message, "error")
-        return redirect(url_for("leaver", **request.form.to_dict(flat=True)))
+        return redirect(url_for("resignation", **request.form.to_dict(flat=True)))
 
-    name, serial = typed["name"], typed["serial"]
-    code = request.form.get("code", "").strip()
-    rows = matching_laptops(name, serial, code)
-    if not rows:
-        message = ("Nothing on file matches those details, so there was "
-                   "nothing to mark in the register.")
-        if wants_json:
-            return {"marked": 0, "message": message}
-        flash(message + " The two emails still work.", "info")
-        return redirect(url_for("leaver", **request.form.to_dict(flat=True)))
+    # The register first, Outlook second. Opening Outlook can take
+    # seconds on a cold start and can go wrong in ways this app does not
+    # control; the departure is the part that must survive either way.
+    marked, message, problem = record_departure(typed)
+    opened, reason = opened_in_outlook(typed)
 
-    identities = {r["identity"] for r in rows}
-    today = date.today()
-    left_on = f"{today.day}/{today.month}/{today.year}"
-    for identity in identities:
-        existing = Departure.query.filter_by(identity=identity).first()
-        if existing is None:
-            db.session.add(Departure(
-                identity=identity, name=rows[0]["name"], left_on=left_on,
-                recorded_by=session.get("display_name", "-")))
-        else:
-            existing.left_on = left_on
-            existing.recorded_by = session.get("display_name", "-")
-    db.session.commit()
-
-    problem = refresh_register()
-    machines = ", ".join(f"{r['model']} ({r['serial']})" for r in rows if r["serial"])
-    message = (f"{rows[0]['name']} marked as left. "
-               f"{len(rows)} laptop{'' if len(rows) == 1 else 's'} in the register "
-               f"updated{': ' + machines if machines else ''}.")
     if wants_json:
-        return {"marked": len(rows), "message": message, "problem": problem or ""}
+        # "marked" is laptops moved and is often nought; "recorded" is
+        # the person, and by this point always happened.
+        return {"marked": marked, "recorded": True, "message": message,
+                "problem": problem, "opened": opened, "reason": reason}
     if problem:
         flash(problem, "info")
     flash(message, "success")
-    return redirect(url_for("leaver", **request.form.to_dict(flat=True)))
+    return redirect(url_for("resignation", **request.form.to_dict(flat=True)))
+
+
+def record_departure(typed):
+    """Write the departure and rebuild the register around it. Returns
+    (how many laptops moved, a sentence for whoever pressed the button,
+    anything that went wrong writing the spreadsheet).
+
+    Resigning is a fact about a PERSON, not about a laptop. Someone can
+    leave who never had a document generated for them - a phone-only
+    starter, someone who joined before this tool existed - and they
+    belong on the resignation sheet exactly like anyone else. So the
+    departure is always written; how many laptops it moved is a separate
+    question, and often nought.
+
+    It is filed against the identity the rest of the app uses, so it
+    follows the person rather than one document: everything they were
+    ever issued flips together, and a document generated for them later
+    lands on the same person.
+    """
+    code = typed.get("code", "")
+    rows = matching_laptops(typed["name"], typed["serial"], code)
+    identities = {r["identity"] for r in rows} or {typed_identity(typed["name"], code)}
+    name = rows[0]["name"] if rows else typed["name"]
+
+    today = date.today()
+    left_on = f"{today.day}/{today.month}/{today.year}"
+    for identity in identities:
+        gone = Departure.query.filter_by(identity=identity).first()
+        if gone is None:
+            gone = Departure(identity=identity)
+            db.session.add(gone)
+        gone.name = name
+        # What was typed, kept for the people with no documents behind
+        # them - without it their row on the sheet is a name and blanks.
+        gone.code = code
+        gone.name_en = typed.get("name_en", "")
+        gone.department = typed.get("department", "")
+        gone.email = typed.get("email", "")
+        gone.left_on = left_on
+        gone.recorded_by = session.get("display_name", "-")
+    db.session.commit()
+
+    problem = refresh_register()
+    if not rows:
+        return 0, (f"{name} recorded as resigned. Nothing on file matches "
+                   f"those details, so no laptop changed hands."), (problem or "")
+    machines = ", ".join(f"{r['model']} ({r['serial']})" for r in rows if r["serial"])
+    return len(rows), (f"{name} recorded as resigned. "
+                       f"{len(rows)} laptop{'' if len(rows) == 1 else 's'} in the "
+                       f"register released{': ' + machines if machines else ''}."), \
+           (problem or "")
 
 
 @app.route("/leaver")
 @login_required
 def leaver():
+    """The page's old address. Kept so a bookmark or a link somebody
+    pasted into a message still lands somewhere."""
+    return redirect(url_for("resignation", **request.args), code=301)
+
+
+@app.route("/resignation")
+@login_required
+def resignation():
     typed = {f["key"]: request.args.get(f["key"], "").strip()
              for f in leaver_email.FORM_FIELDS}
     return render_template(
         "leaver.html",
         fields=leaver_email.FORM_FIELDS, typed=typed,
         holdings=matching_laptops(typed.get("name", ""), typed.get("serial", "")),
-        messages=leaver_email.MESSAGES, recipients=LEAVER_RECIPIENTS,
+        messages=leaver_email.MESSAGES,
+        # Tidied for reading: whatever separator was typed in .env, the
+        # page shows one comma-spaced list.
+        recipients={key: ", ".join(settings.addresses(raw))
+                    for key, raw in LEAVER_RECIPIENTS.items()},
+        addresses=leaver_addresses(),
         links=leaver_links(typed),
         # The same two links with a token wherever a value goes, for the
         # browser to fill in as the boxes are typed.
