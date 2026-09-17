@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 builders.py
 ===========
@@ -13,6 +12,10 @@ file. They are the only place that knows which FILL_ token belongs to
 which field; the mechanics of editing the XML live in ooxml.py, and what
 fields exist at all lives in templates.py.
 """
+
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
 
 import docx
 
@@ -30,13 +33,11 @@ from ooxml import (
 )
 from templates import DEFAULT_COMPANY
 
-
-
 # ----------------------------------------------------------------------
 # Laptop handover
 # ----------------------------------------------------------------------
 
-def fill_laptop_handover(template_path, output_path, data):
+def fill_laptop_handover(template_path: Path, output_path: Path, data: dict[str, Any]) -> Path:
     """Laptop handover.
 
     Template refreshed again 2026-09 (v5): the source .docx is now
@@ -109,7 +110,7 @@ def fill_laptop_handover(template_path, output_path, data):
 # Laptop replacement
 # ----------------------------------------------------------------------
 
-def fill_laptop_replacement(template_path, output_path, data):
+def fill_laptop_replacement(template_path: Path, output_path: Path, data: dict[str, Any]) -> Path:
     """Laptop replacement (old device returned + new device issued).
 
     Same story as the handover above - the refreshed source document is
@@ -180,12 +181,12 @@ def fill_laptop_replacement(template_path, output_path, data):
 # registry entry and a .docx, and no new code at all.
 # ----------------------------------------------------------------------
 
-def fill_accessory_handover(template_path, output_path, data):
+def fill_accessory_handover(template_path: Path, output_path: Path, data: dict[str, Any]) -> Path:
     """Fill any of the accessory handover documents."""
     d = docx.Document(str(template_path))
     date_str, day_name, month_name = date_parts(data["date_obj"])
 
-    values = {
+    values: dict[str, Any] = {
         "FILL_DATE": date_str,
         "FILL_MONTH": month_name,
         "FILL_DAY": day_name,
@@ -232,7 +233,7 @@ FILL_FUNCTIONS = {
 }
 
 
-def fill_function(template_id):
+def fill_function(template_id: str) -> Callable[[Path, Path, dict[str, Any]], Path]:
     """How to fill this document type. Everything that is not a laptop
     is the accessory shape."""
     return FILL_FUNCTIONS.get(template_id, fill_accessory_handover)

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 outlook_com.py
 ==============
@@ -30,6 +29,7 @@ the caller can fall back rather than guess.
 """
 import logging
 import sys
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ OL_MAIL_ITEM = 0    # Outlook's constant for "a new mail message"
 OL_DISCARD = 1      # ...and for closing one without saving it
 
 
-def under_signature(existing, html):
+def under_signature(existing: str, html: str) -> str:
     """Put our message at the top of the body Outlook has already made,
     so whatever is down there - the sender's signature - stays.
 
@@ -56,7 +56,7 @@ def under_signature(existing, html):
     return existing[:closes + 1] + html + existing[closes + 1:]
 
 
-def unavailable():
+def unavailable() -> str | None:
     """Why this machine cannot open drafts directly, or None when it can.
 
     A sentence rather than a flag, because the caller shows it to the
@@ -75,7 +75,7 @@ def unavailable():
     return None
 
 
-def open_drafts(drafts):
+def open_drafts(drafts: list[dict[str, Any]]) -> str | None:
     """Open every draft in Outlook. Returns None, or a sentence saying
     why none of them opened.
 
@@ -102,7 +102,7 @@ def open_drafts(drafts):
                     "or this may be the new Outlook, which cannot be "
                     "opened this way.")
 
-        opened = []
+        opened: list[Any] = []
         try:
             for draft in drafts:
                 item = outlook.CreateItem(OL_MAIL_ITEM)

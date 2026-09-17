@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 leaver_email.py
 ===============
@@ -30,6 +29,7 @@ every token on every keystroke, empty values included.
 """
 
 from html import escape
+from typing import Any
 
 import email_html
 from templates import DEPARTMENTS, EMPLOYEE_FIELDS_WITH_EMAIL
@@ -102,7 +102,7 @@ DETAIL_LINES = (
 )
 
 
-def detail_rows(person):
+def detail_rows(person: dict[str, Any]) -> list[tuple[str, str]]:
     """The details as (label, value) pairs.
 
     One description of what the details ARE, so the bulleted list and the
@@ -115,29 +115,29 @@ def detail_rows(person):
             for label, key in DETAIL_LINES]
 
 
-def detail_block(person):
+def detail_block(person: dict[str, Any]) -> list[str]:
     """The details as bullets, for the plain-text body."""
     return [f"* {label}: {value}" for label, value in detail_rows(person)]
 
 
-def dept_clause(department):
+def dept_clause(department: str | None) -> str:
     """" from the Technical Office department", or nothing at all."""
     value = (department or "").strip()
     return CLAUSE_TEMPLATE.replace(TOKENS["department"], value) if value else ""
 
 
-def person_name(person):
+def person_name(person: dict[str, Any]) -> str:
     """What the messages call them: the English name, with the Arabic one
     behind it for anyone recorded before that box existed."""
     return ((person.get("name_en") or "").strip()
             or (person.get("name") or "").strip())
 
 
-def ems_subject(person):
+def ems_subject(person: dict[str, Any]) -> str:
     return f"EMS deactivation — {person_name(person)}".strip(" —")
 
 
-def ems_body(person):
+def ems_body(person: dict[str, Any]) -> str:
     return "\n".join([
         "Dear Team,",
         "",
@@ -151,11 +151,11 @@ def ems_body(person):
     ])
 
 
-def resignation_subject(person):
+def resignation_subject(person: dict[str, Any]) -> str:
     return f"Resignation — {person_name(person)}".strip(" —")
 
 
-def resignation_body(person):
+def resignation_body(person: dict[str, Any]) -> str:
     name = person_name(person)
     where = person.get("dept_clause")
     if where is None:
@@ -184,12 +184,12 @@ def resignation_body(person):
 # message this app sends, so they all look like they came from the same
 # place.
 
-def detail_table(person):
+def detail_table(person: dict[str, Any]) -> str:
     """The details as a two-column table: label, then value."""
     return email_html.table(detail_rows(person))
 
 
-def ems_html(person):
+def ems_html(person: dict[str, Any]) -> str:
     return "".join([
         email_html.paragraph("Dear Team,"),
         email_html.paragraph("Kindly provide the FortiClient deactivation code."),
@@ -198,7 +198,7 @@ def ems_html(person):
     ])
 
 
-def resignation_html(person):
+def resignation_html(person: dict[str, Any]) -> str:
     name = escape(person_name(person))
     where = person.get("dept_clause")
     if where is None:

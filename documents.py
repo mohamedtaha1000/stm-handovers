@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 documents.py
 ============
@@ -18,7 +17,9 @@ import logging
 import os
 import re
 import secrets
+from collections.abc import Mapping
 from datetime import date, datetime
+from typing import Any
 
 import builders
 import settings
@@ -39,7 +40,7 @@ FILENAME_UNSAFE_RE = re.compile(r'[\\/:*?"<>|]')
 SHARED_BATCH_KEYS = EMPLOYEE_KEYS + ("date", "computer_name")
 
 
-def display_filename(template_id, name):
+def display_filename(template_id: str, name: str) -> str:
     """The clean, human-facing filename a person sees when they download -
     e.g. "استلام لابتوب(Name).docx" - no timestamps or ids in it."""
     spec = TEMPLATES.get(template_id, {})
@@ -48,7 +49,9 @@ def display_filename(template_id, name):
     return f"{prefix}({safe_name}).docx"
 
 
-def generated_filename(template_id, name, date_obj, exclude=None):
+def generated_filename(
+    template_id: str, name: str, date_obj: datetime, exclude: str | None = None
+) -> str:
     """The filename a generated document is actually saved under in
     generated/ - e.g. "Yasmin Mohamed - Laptop Handover - 2026-09-10.docx" -
     so the folder is browsable on its own, not just through the site.
@@ -73,14 +76,16 @@ def generated_filename(template_id, name, date_obj, exclude=None):
     return candidate
 
 
-def collect_values(template_id, form, existing=None):
+def collect_values(
+    template_id: str, form: Mapping[str, str], existing: dict[str, Any] | None = None
+) -> tuple[dict[str, str], dict[str, Any], datetime, list[str]]:
     """Read this template's fields out of a submitted form, validate them,
     and return (values, fill_data, date_obj, errors). `errors` empty means
     the submission is good."""
     spec = TEMPLATES[template_id]
     fields = all_fields(template_id)
     values = {f["key"]: form.get(f["key"], "").strip() for f in fields}
-    errors = []
+    errors: list[str] = []
 
     # Named the way the form labels them, not by their internal keys:
     # this message is now the thing an older record shows when it is
@@ -141,7 +146,7 @@ def collect_values(template_id, form, existing=None):
     return values, fill_data, date_obj, errors
 
 
-def write_document(template_id, fill_data, internal_name):
+def write_document(template_id: str, fill_data: dict[str, Any], internal_name: str) -> str | None:
     """Generate the .docx into generated/ under `internal_name`.
 
     Written to a temporary file first and moved into place only once it
@@ -169,7 +174,14 @@ def write_document(template_id, fill_data, internal_name):
     return None
 
 
-def stamp_record(record, template_id, values, fill_data, date_obj, internal_name):
+def stamp_record(
+    record: Handover,
+    template_id: str,
+    values: dict[str, str],
+    fill_data: dict[str, Any],
+    date_obj: datetime,
+    internal_name: str,
+) -> Handover:
     """Write one generated document onto a Handover row.
 
     The same seven fields were being set in three places - creating one
@@ -192,7 +204,7 @@ def stamp_record(record, template_id, values, fill_data, date_obj, internal_name
     return record
 
 
-def form_data_from_record(record):
+def form_data_from_record(record: Handover) -> dict[str, Any]:
     """Turn a saved record back into the dict form.html pre-fills from."""
     data = dict(record.fields)
 
@@ -226,7 +238,7 @@ def form_data_from_record(record):
     return data
 
 
-def rebuild_document(record):
+def rebuild_document(record: Handover) -> str | None:
     """Recreate this record's .docx exactly as it already reads, from the
     values stored on the row - for when the file in generated/ has been
     lost (deleted by hand, or an interrupted OneDrive sync) but the
@@ -248,11 +260,11 @@ def rebuild_document(record):
     return write_document(template_id, fill_data, record.filename)
 
 
-def scoped_form(template_id, form):
+def scoped_form(template_id: str, form: Mapping[str, str]) -> dict[str, str]:
     """A view of the submitted form as this one template expects it:
     shared fields as they are, per-document fields un-prefixed."""
     prefix = f"{template_id}__"
-    scoped = {}
+    scoped: dict[str, str] = {}
     for key in form.keys():
         if key.startswith(prefix):
             scoped[key[len(prefix):]] = form.get(key)
@@ -261,7 +273,7 @@ def scoped_form(template_id, form):
     return scoped
 
 
-def batch_records(raw_ids):
+def batch_records(raw_ids: str) -> list[Handover]:
     ids = [i.strip() for i in raw_ids.split(",") if i.strip()]
     found = {r.id: r for r in Handover.query.filter(Handover.id.in_(ids)).all()} if ids else {}
     return [found[i] for i in ids if i in found]

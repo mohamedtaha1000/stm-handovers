@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 notify_email.py
 ===============
@@ -28,9 +27,10 @@ left out rather than printed as an empty row.
 """
 
 from html import escape
+from typing import Any
 
 import email_html
-
+from models import Handover
 from templates import TEMPLATES
 
 # The employee lines, in the order the team writes them.
@@ -70,14 +70,14 @@ DEVICE_LINE_ORDER = ("brand", "model", "serial", "sim_number", "capacity",
                      "color", "storage", "ram", "cpu")
 
 
-def column_heading(label):
+def column_heading(label: str) -> str:
     """A field label as a heading: "Serial number" becomes "Serial
     Number", while RAM and CPU are left alone rather than being flattened
     into Ram and Cpu."""
     return " ".join(w.capitalize() if w.islower() else w for w in label.split())
 
 
-def base_key(key):
+def base_key(key: str) -> str:
     """"old_serial" is a serial; the "old" belongs to the section, not to
     the line."""
     for prefix in ("old_", "new_"):
@@ -86,7 +86,7 @@ def base_key(key):
     return key
 
 
-def detail_label(key, label, heading=""):
+def detail_label(key: str, label: str, heading: str = "") -> str:
     """The label for one equipment line, with anything the section
     heading above it already says stripped off: "Old serial number" under
     OLD DEVICE is just "Serial Number", and "Laptop model" under LAPTOP
@@ -101,7 +101,7 @@ def detail_label(key, label, heading=""):
     return column_heading(" ".join(words))
 
 
-def display_name(record):
+def display_name(record: Handover) -> str:
     """The name this message calls the person.
 
     The English one, because the message is in English - falling back to
@@ -111,7 +111,7 @@ def display_name(record):
     return (record.fields.get("name_en") or "").strip() or record.name
 
 
-def employee_rows(record):
+def employee_rows(record: Handover) -> list[tuple[str, str]]:
     """The employee block as (label, value) pairs.
 
     One description of what the block IS, so the plain-text list and the
@@ -120,7 +120,7 @@ def employee_rows(record):
     printed as an empty row.
     """
     fields = record.fields
-    rows = []
+    rows: list[tuple[str, str]] = []
     for label, key in EMPLOYEE_LINES:
         # The name is a column of its own on the record; everything else
         # is whatever that document type collected.
@@ -130,12 +130,12 @@ def employee_rows(record):
     return rows
 
 
-def employee_lines(record):
+def employee_lines(record: Handover) -> list[str]:
     """The employee block as "Label: value" lines, for the plain text."""
     return [f"{label}: {value}" for label, value in employee_rows(record)]
 
 
-def device_sections(record):
+def device_sections(record: Handover) -> list[tuple[str, list[tuple[str, str]]]]:
     """The equipment blocks for one document: (heading, rows) pairs,
     where each row is (label, value).
 
@@ -152,15 +152,15 @@ def device_sections(record):
         groups.insert(1, (spec.get("device_title_2") or "Details",
                           list(spec["device_fields_2"])))
 
-    def rank(pair):
+    def rank(pair: tuple[int, dict[str, Any]]) -> int:
         index, f = pair
         key = base_key(f["key"])
         return (DEVICE_LINE_ORDER.index(key) if key in DEVICE_LINE_ORDER
                 else len(DEVICE_LINE_ORDER) + index)
 
-    sections = []
+    sections: list[tuple[str, list[tuple[str, str]]]] = []
     for title, group in groups:
-        rows = []
+        rows: list[tuple[str, str]] = []
         for _, f in sorted(enumerate(group), key=rank):
             key = f["key"]
             if key in SKIP_DEVICE_KEYS:
@@ -173,7 +173,7 @@ def device_sections(record):
     return sections
 
 
-def subject_for(records):
+def subject_for(records: list[Handover]) -> str:
     first = records[0]
     spec = TEMPLATES.get(first.template_id)
     label = spec["label"] if spec else first.template_label
@@ -185,10 +185,10 @@ def subject_for(records):
     return f"{label} — {who}"
 
 
-def opening_line(records):
+def opening_line(records: list[Handover]) -> str:
     """What was handed over, named the way the document names it."""
     if len(records) > 1:
-        items = []
+        items: list[str] = []
         for record in records:
             spec = TEMPLATES.get(record.template_id)
             short = (spec.get("short") if spec else None) or record.template_label
@@ -215,18 +215,20 @@ def opening_line(records):
 HEADING_FRAME = "==="
 
 
-def section(heading, lines):
+def section(heading: str, lines: list[str]) -> list[str]:
     """A block: the framed heading in capitals, then its lines, then a
     blank line."""
     return [f"{HEADING_FRAME} {heading.upper()} {HEADING_FRAME}", *lines, ""]
 
 
-def short_name(record):
+def short_name(record: Handover) -> str:
     spec = TEMPLATES.get(record.template_id)
     return ((spec.get("short") if spec else None) or record.template_label).lower()
 
 
-def build_body(records, greeting_name, detailed=None):
+def build_body(
+    records: list[Handover], greeting_name: str, detailed: list[Handover] | None = None
+) -> str:
     """The whole message as plain text, which is all a mailto: can carry.
 
     One employee block - a batch is always one person - then one block
@@ -266,7 +268,9 @@ def build_body(records, greeting_name, detailed=None):
 # message this app sends, so they all look like they came from the same
 # place.
 
-def build_html(records, greeting_name, detailed=None):
+def build_html(
+    records: list[Handover], greeting_name: str, detailed: list[Handover] | None = None
+) -> str:
     """The whole message as HTML: one employee table, then one table per
     piece of equipment.
 

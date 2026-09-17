@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 email_html.py
 =============
@@ -23,6 +22,7 @@ under it read as one email.
 Everything that came from a person is escaped on the way in: a name with
 an ampersand in it is a name, never markup.
 """
+from collections.abc import Iterable
 from html import escape
 
 FONT = "font-family:Calibri,'Segoe UI',Arial,sans-serif;font-size:11pt;color:#1a1a1a;"
@@ -32,19 +32,19 @@ LABEL_BG = "#f2f4f7"
 _CELL = f"{FONT}padding:6px 13px;border:1px solid {LINE};"
 
 
-def paragraph(inner):
+def paragraph(inner: str) -> str:
     """One line of the message. `inner` is markup, so anything typed has
     already been escaped by whoever built it."""
     return f'<p style="{FONT}margin:0 0 11px;">{inner}</p>'
 
 
-def heading(text):
+def heading(text: str) -> str:
     """A section heading above a table - bold, and tight to the table
     under it rather than floating between the two."""
     return (f'<p style="{FONT}margin:0 0 6px;"><b>{escape(text)}</b></p>')
 
 
-def table(rows):
+def table(rows: Iterable[tuple[str, str]]) -> str:
     """Label and value, one row each, as a ruled two-column table.
 
     Rows arrive as (label, value) pairs and are written exactly as given,
@@ -62,7 +62,7 @@ def table(rows):
             f'style="border-collapse:collapse;margin:0 0 15px;">{body}</table>')
 
 
-def section(title, rows):
+def section(title: str, rows: Iterable[tuple[str, str]]) -> str:
     """A heading and its table, or nothing at all when there are no rows
     - an empty table is worse than a missing one."""
     return heading(title) + table(rows) if rows else ""

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 asset_register.py
 =================
@@ -25,7 +24,11 @@ holding at the time, because "who left and what do we need back" is a
 different question from "where is every machine".
 """
 
-from datetime import datetime
+from collections.abc import Callable, Iterable
+from datetime import date, datetime
+from typing import Any
+
+from models import Departure, Handover
 
 # Only the documents that issue a computer. A headset receipt has a
 # serial number too and it has no business in a laptop register.
@@ -79,7 +82,7 @@ STATUS_TEXT = {
 }
 
 
-def parse_date(value):
+def parse_date(value: str | None) -> date | None:
     """The "D/M/YYYY" the records store, as a date. Anything unparseable
     sorts last rather than raising - a register that refuses to build
     because one row has a typo in it is worse than one odd row."""
@@ -92,7 +95,7 @@ def parse_date(value):
     return None
 
 
-def show_date(value):
+def show_date(value: str | None) -> str:
     """1-Sep-26, matching how the emails write dates."""
     parsed = parse_date(value)
     if parsed is None:
@@ -100,7 +103,7 @@ def show_date(value):
     return f"{parsed.day}-{parsed.strftime('%b')}-{parsed.strftime('%y')}"
 
 
-def assignment(record, identity):
+def assignment(record: Handover, identity: str) -> dict[str, Any] | None:
     """One laptop handed to one person, or None if this document did not
     hand over a laptop."""
     if record.template_id not in LAPTOP_TEMPLATES:
@@ -108,7 +111,7 @@ def assignment(record, identity):
     prefix = LAPTOP_TEMPLATES[record.template_id]
     fields = record.fields
 
-    def field(key):
+    def field(key: str) -> str:
         return (fields.get(prefix + key) or "").strip()
 
     return {
@@ -136,14 +139,18 @@ def assignment(record, identity):
     }
 
 
-def build_rows(records, identity_of, departures):
+def build_rows(
+    records: Iterable[Handover],
+    identity_of: Callable[[Handover], str],
+    departures: dict[str, Departure],
+) -> list[dict[str, Any]]:
     """Every laptop assignment, newest first, with a status worked out
     per person.
 
     `departures` maps an employee identity to a Departure-shaped object
     with `.left_on` and `.name`.
     """
-    rows = []
+    rows: list[dict[str, Any]] = []
     for record in records:
         found = assignment(record, identity_of(record))
         if found and (found["serial"] or found["model"]):
@@ -152,13 +159,16 @@ def build_rows(records, identity_of, departures):
     # Per person, oldest first: everything but their latest machine has
     # been superseded, and the replacement's own date is the day the old
     # one came back.
-    by_person = {}
+    by_person: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
         by_person.setdefault(row["identity"], []).append(row)
 
     for identity, mine in by_person.items():
         mine.sort(key=lambda r: (r["sort_date"] or datetime.min.date(), r["record_id"]))
-        for older, newer in zip(mine, mine[1:]):
+        # Not strict: this is the classic pairwise-consecutive idiom -
+        # mine[1:] is one element shorter than mine by design, so the
+        # last (most recent) machine has no "newer" to be replaced by.
+        for older, newer in zip(mine, mine[1:], strict=False):
             older["status"] = REPLACED
             older["ended"] = newer["date"]
             older["note"] = f"Replaced by {newer['model'] or 'a new machine'}".strip()
@@ -177,7 +187,9 @@ def build_rows(records, identity_of, departures):
     return rows
 
 
-def build_leavers(rows, departures):
+def build_leavers(
+    rows: list[dict[str, Any]], departures: dict[str, Departure]
+) -> list[dict[str, Any]]:
     """One row per person who has resigned, newest departure first.
 
     Everyone recorded as having left is here, whether or not they ever
@@ -189,11 +201,11 @@ def build_leavers(rows, departures):
     details come from what was typed when they were recorded - which is
     the only place those exist.
     """
-    by_person = {}
+    by_person: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
         by_person.setdefault(row["identity"], []).append(row)
 
-    leavers = []
+    leavers: list[dict[str, Any]] = []
     for identity, gone in departures.items():
         mine = by_person.get(identity, [])
         newest = max(mine, key=lambda r: (r["sort_date"] or datetime.min.date(),
@@ -220,12 +232,12 @@ def build_leavers(rows, departures):
     return leavers
 
 
-def leaver_values(row):
+def leaver_values(row: dict[str, Any]) -> list[Any]:
     return [row["name"], row["name_en"], row["code"], row["department"],
             row["email"], show_date(row["left_on"]), row["by"], row["held"]]
 
 
-def row_values(row):
+def row_values(row: dict[str, Any]) -> list[Any]:
     return [row["name"], row["name_en"], row["code"], row["department"],
             row["email"],
             row["computer_name"], row["model"], row["serial"], row["cpu"],
@@ -234,7 +246,9 @@ def row_values(row):
             show_date(row["ended"]), row["note"]]
 
 
-def lay_out(ws, columns, values, title):
+def lay_out(
+    ws: Any, columns: Iterable[tuple[str, int]], values: Iterable[list[Any]], title: str
+) -> Any:
     """A sheet: bold shaded header, sensible widths, frozen top row and
     filter buttons. Both sheets are the same shape of thing, so they are
     built by the same function rather than by two near-identical blocks."""
@@ -262,11 +276,14 @@ def lay_out(ws, columns, values, title):
     return ws
 
 
-def write_workbook(rows, path, departures=None):
+def write_workbook(
+    rows: list[dict[str, Any]], path: str, departures: dict[str, Departure] | None = None
+) -> int:
     """The workbook: one sheet of assignments, one of people who have
     left. Written to a neighbouring temporary file and moved into place,
     so a reader never catches it half-written."""
     import os
+
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill
 
