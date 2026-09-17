@@ -262,6 +262,6 @@ def scoped_form(template_id, form):
 
 
 def batch_records(raw_ids):
-    ids = [int(i) for i in raw_ids.split(",") if i.strip().isdigit()]
+    ids = [i.strip() for i in raw_ids.split(",") if i.strip()]
     found = {r.id: r for r in Handover.query.filter(Handover.id.in_(ids)).all()} if ids else {}
     return [found[i] for i in ids if i in found]

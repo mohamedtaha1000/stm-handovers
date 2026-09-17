@@ -117,23 +117,21 @@ server.
 ## Accounts and roles
 
 Two roles: **Staff** does the everyday work - make documents, record
-resignations, look people up, download and correct their own documents.
-**Admin** can additionally delete anything, edit a document someone else
-made, and manage accounts from "Manage users".
+resignations, look people up, see and download the full History.
+**Admin** can additionally edit any document or resignation record,
+delete anything, and manage accounts from "Manage users".
 
-**A Staff member's History only shows what they made.** The query is
-scoped to their own account server-side - a record they don't own isn't
-hidden with CSS, it simply isn't in the page at all. Download, Edit and
-Regenerate on a row they can't see aren't reachable either, even by
-typing the URL directly (a 403, not a silent failure).
-
-**A record made before accounts existed belongs to nobody.** There's no
-reliable way to match a free-typed name from the old shared-password era
-back to a real account, so every one of those records is Admin-only
-until an Admin explicitly assigns it to someone via the "Owner account"
-field on its edit page (also how you'd fix a document accidentally
-attributed to the wrong person). Assigning it is the only way a Staff
-member gets a pre-existing record into their own History.
+**History is fully open; editing is not.** Every signed-in person sees
+the same History - same rows, same search, same downloads, same
+Regenerate for a missing file. What differs by role is what you can *do*
+to a row: only an Admin can open Edit or Delete, checked on the route
+itself (a 403, not a silent failure) so it can't be reached by typing
+the URL directly either. `Handover.created_by_user_id` and
+`Departure.recorded_by_user_id` still record who actually made each
+record (tied to a real account, unlike the free-typed `created_by`/
+`recorded_by` text next to them), but nothing checks those columns to
+decide what a Staff member can see or do anymore - they're audit data
+now, not a permission.
 
 **Accounts are only ever created by an Admin**, from "Manage users" -
 there's no sign-up page. Every new account, and every password reset,
@@ -163,7 +161,7 @@ else is plain Python that can be read, tested and understood on its own.
 | `templates.py` | 412 | The registry: the ten document types and their fields |
 | `ooxml.py` | 1228 | The Word engine. Names no document type |
 | `builders.py` | 238 | Three shapes that serve all ten types |
-| `models.py` | 211 | `Handover`, `Departure`, `User`, and the migration that adds columns |
+| `models.py` | 329 | `Handover`, `Departure`, `User` (UUID ids), and the migrations that keep an older database's data intact |
 | `documents.py` | 245 | Form → values → `.docx` → history row |
 | `employees.py` | 216 | Identity, duplicates, lookups, register rows |
 | `asset_register.py` | 291 | The Excel file: both sheets |
@@ -179,6 +177,16 @@ else is plain Python that can be read, tested and understood on its own.
 ---
 
 ## Things that will surprise you
+
+**The first startup after the UUID migration rewrites every id.**
+Documents, resignation records and accounts used to have plain
+sequential ids (1, 2, 3, ...) - easy to guess and step through in a
+URL. The first time the app starts against a database that still has
+those, it rebuilds `user`/`handover`/`departure` with UUID ids instead,
+automatically, once, logging a warning while it does. Every row and
+every foreign key survives intact; only the ids themselves change. A
+bookmark or a link to an old `/edit/8`-style URL stops working after
+this - there was never a way to keep both.
 
 **The register is rebuilt, not edited.** Covered above, but it is the
 single most common confusion.
