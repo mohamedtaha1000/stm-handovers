@@ -234,6 +234,31 @@ def change_password():
     )
 
 
+@app.route("/account/profile", methods=["GET", "POST"])
+@login_required
+def account_profile():
+    """Change your own username or display name. Not reachable while a
+    password change is still forced - that screen is the one thing that
+    has to happen first, so it stays the only door open until it does."""
+    user = User.query.get(session["user_id"])
+    error = None
+    if request.method == "POST":
+        username = request.form.get("username", "").strip().lower()
+        display_name = request.form.get("display_name", "").strip()
+        if not username or not display_name:
+            error = "A username and a display name are both needed."
+        elif User.query.filter(User.username == username, User.id != user.id).first() is not None:
+            error = f'The username "{username}" is already taken.'
+        else:
+            user.username = username
+            user.display_name = display_name
+            db.session.commit()
+            session["display_name"] = display_name
+            flash("Profile updated.", "success")
+            return redirect(url_for("index"))
+    return render_template("account_profile.html", error=error, user=user)
+
+
 @app.errorhandler(403)
 def forbidden(_error):
     # A plain redirect, not a 403 response with a Location header - a
@@ -285,6 +310,26 @@ def admin_users_create():
         flash(f'{display_name} can now sign in as "{username}" with the '
               f"starting password {settings.DEFAULT_USER_PASSWORD} - they'll "
               f"be asked to change it the moment they log in.", "success")
+    return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/users/<string:user_id>/rename", methods=["POST"])
+@admin_required
+def admin_users_rename(user_id):
+    user = User.query.get_or_404(user_id)
+    username = request.form.get("username", "").strip().lower()
+    display_name = request.form.get("display_name", "").strip()
+    if not username or not display_name:
+        flash("A username and a display name are both needed.", "error")
+    elif User.query.filter(User.username == username, User.id != user.id).first() is not None:
+        flash(f'The username "{username}" is already taken.', "error")
+    else:
+        user.username = username
+        user.display_name = display_name
+        db.session.commit()
+        if user.id == session.get("user_id"):
+            session["display_name"] = display_name
+        flash(f"Updated to {display_name} ({username}).", "success")
     return redirect(url_for("admin_users"))
 
 

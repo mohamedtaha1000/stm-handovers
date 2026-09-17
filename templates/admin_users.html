@@ -54,10 +54,14 @@
         {% for u in users %}
         <tr>
           <td class="wrap">
-            <div class="cell-strong">{{ u.display_name }}</div>
+            <input class="rename-input" name="display_name" form="rename-table-{{ u.id }}" value="{{ u.display_name }}" required
+                   data-tip="What documents, the nav, and every &quot;who did this&quot; field call {{ u.display_name }}.">
             {% if u.must_change_password %}<div class="cell-sub">Hasn't set their own password yet</div>{% endif %}
           </td>
-          <td class="mono">{{ u.username }}</td>
+          <td class="mono">
+            <input class="rename-input mono" name="username" form="rename-table-{{ u.id }}" value="{{ u.username }}" required
+                   data-tip="What {{ u.display_name }} signs in with.">
+          </td>
           <td>
             <form method="post" action="{{ url_for('admin_users_role', user_id=u.id) }}" class="delete-form">
               <select name="role" onchange="this.form.submit()"
@@ -74,6 +78,13 @@
             </span>
           </td>
           <td class="actions no-print">
+            <form id="rename-table-{{ u.id }}" method="post" action="{{ url_for('admin_users_rename', user_id=u.id) }}" class="delete-form">
+              <button type="submit" class="icon-action"
+                      data-tip="Save the username/display name change for {{ u.display_name }}."
+                      aria-label="Save changes to {{ u.display_name }}">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+              </button>
+            </form>
             <form method="post" action="{{ url_for('admin_users_reset_password', user_id=u.id) }}" class="delete-form"
                   onsubmit="return confirm('Reset {{ u.display_name }}\'s password to the starting default? They will need to change it again on their next login.');">
               <button type="submit" class="icon-action warn"
@@ -115,8 +126,8 @@
     <div class="record-card">
       <div class="record-card-head">
         <div>
-          <div class="cell-strong">{{ u.display_name }}</div>
-          <div class="cell-sub mono">{{ u.username }}</div>
+          <input class="rename-input cell-strong" name="display_name" form="rename-card-{{ u.id }}" value="{{ u.display_name }}" required>
+          <input class="rename-input cell-sub mono" name="username" form="rename-card-{{ u.id }}" value="{{ u.username }}" required>
         </div>
         <span class="doc-chip {{ 'cat-computer' if u.is_active else 'cat-other' }}">
           {{ 'Active' if u.is_active else 'Deactivated' }}
@@ -134,6 +145,12 @@
         {% if u.must_change_password %}<span>Hasn't set their own password yet</span>{% endif %}
       </div>
       <div class="record-card-actions">
+        <form id="rename-card-{{ u.id }}" method="post" action="{{ url_for('admin_users_rename', user_id=u.id) }}" class="delete-form">
+          <button type="submit" class="tap-action"
+                  data-tip="Save the username/display name change for {{ u.display_name }}.">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+          </button>
+        </form>
         <form method="post" action="{{ url_for('admin_users_reset_password', user_id=u.id) }}" class="delete-form"
               onsubmit="return confirm('Reset {{ u.display_name }}\'s password to the starting default? They will need to change it again on their next login.');">
           <button type="submit" class="tap-action"

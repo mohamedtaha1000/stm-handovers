@@ -219,15 +219,19 @@ register.
 
 ## Managing accounts
 
-Admin only, from "Manage users" in the nav:
+**Every signed-in person**, from "My profile" in the nav, can change
+their own username and display name (both must stay unique across the
+whole app). **Change password** works the same way, right beside it.
+
+**Admin only**, from "Manage users" in the nav:
 
 - **Add a user** — username, display name, role. There's no password
   field: every new account starts with the same fixed password
   (`DEFAULT_USER_PASSWORD`), and the account holder is forced to set
   their own the moment they log in, before they can do anything else.
-- **Change role**, **deactivate/reactivate**, **reset password** (back
-  to the same fixed starting password, forcing another change on next
-  login).
+- **Rename** (username and display name), **change role**,
+  **deactivate/reactivate**, **reset password** (back to the same fixed
+  starting password, forcing another change on next login) — for anyone.
 - An Admin can't deactivate or demote themselves, and can't leave the
   team with zero active Admins.
 

@@ -51,6 +51,8 @@
         <span class="who-badge"
               data-tip="You are signed in as {{ session.get('display_name') }} — this is the name recorded against every document you make.">{{ session.get('display_name', '?')|initials }}</span>
         <span class="who-name">{{ session.get('display_name') }}</span>
+        <a href="{{ url_for('account_profile') }}" class="logout"
+           data-tip="Change your username or display name.">My profile</a>
         <a href="{{ url_for('change_password') }}" class="logout"
            data-tip="Change the password for your own account.">Change password</a>
         <a href="{{ url_for('logout') }}" class="logout"
