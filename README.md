@@ -31,9 +31,9 @@ This README covers setup and deployment. Related documentation:
 
 Users sign in with their own account, choose a document type, fill in a
 form, and download the completed `.docx`. Two roles: **Staff** does the
-everyday work (make documents, record resignations, look people up);
-**Admin** can additionally delete records, edit anyone's record (not
-just their own), and manage accounts. See
+everyday work — make documents, record resignations, look people up, see
+and download the full History; **Admin** can additionally edit or delete
+any record and manage accounts. See
 [Managing accounts](#managing-accounts). Supported document types:
 
 | Document type              | Description |
@@ -199,17 +199,15 @@ History page supports:
   generated `.docx` file, after a confirmation prompt.
 - **Regenerate** — if a record's `.docx` goes missing from disk on its
   own (not via Delete), its row shows a "Regenerate" action that rebuilds
-  the file from the record's own saved data.
+  the file from the record's own saved data. Open to everyone, same as
+  Download.
 
 Search, filters, and pagination are reflected in the URL, so a filtered
 view can be bookmarked or shared.
 
-A Staff member's History only lists documents **they** created — an
-Admin sees and can act on every record. Editing a document someone else
-created is also Admin-only; editing your own isn't. A record made before
-accounts existed has no verified owner, so it's Admin-only until an
-Admin claims it for the right person via the "Owner account" field on
-its edit page.
+Every signed-in person sees the full History and can download anything
+in it. **Editing** (Handover documents and resignation records alike) is
+Admin only, with no exception for a Staff member's own work.
 
 ### Resignation
 
@@ -280,7 +278,9 @@ internal network, review the following:
 - **National IDs are masked** in list views (last 4 digits only). The
   full number is still present in the generated `.docx` file and
   briefly on the confirmation page immediately after generation, since
-  it is required in the document itself.
+  it is required in the document itself. Every Staff member can download
+  every document in History — including the full, unmasked ID inside it —
+  not just ones they made themselves.
 - **Change `SECRET_KEY`** from any placeholder value before deploying,
   and don't leave `ADMIN_PASSWORD` as whatever you first typed — sign in
   once, change it, and use `ADMIN_USERNAME`/`ADMIN_PASSWORD` only for

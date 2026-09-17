@@ -29,21 +29,6 @@
     {% endfor %}
   </div>
 
-  {% if owners %}
-  <div class="grid">
-    <div class="field">
-      <label for="owner_user_id">Owner account<span class="field-note">Admin only</span></label>
-      <select id="owner_user_id" name="owner_user_id"
-              data-tip="Whoever this is assigned to can correct this record themselves later. &quot;Unassigned&quot; means only an Admin can.">
-        <option value=""{% if not gone.recorded_by_user_id %} selected{% endif %}>Unassigned</option>
-        {% for u in owners %}
-        <option value="{{ u.id }}"{% if gone.recorded_by_user_id == u.id %} selected{% endif %}>{{ u.display_name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-  </div>
-  {% endif %}
-
   <div class="form-actions">
     <a class="button-secondary" href="{{ url_for('resignation') }}"
        data-tip="Go back without saving. The record stays as it is.">Cancel</a>

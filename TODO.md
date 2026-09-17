@@ -84,11 +84,18 @@ find the space rather than let it spill.
 ### 11. ~~Individual per-user logins and Role-Based Access Control~~ — done
 
 Replaced the single shared team password with real accounts (two roles:
-Admin, Staff). Admin-only: deleting any record, editing a record someone
-else created, managing accounts. A Staff member's History only shows
-documents they created. See `DECISIONS.md` for the shape of it and why,
-and `HOW-IT-WORKS.md`'s "Accounts and roles" section for day-to-day
-behavior.
+Admin, Staff). Every signed-in person sees and downloads the full
+History; Admin-only: editing any document or resignation record,
+deleting anything, managing accounts. See `DECISIONS.md` for the shape
+of it and why, and `HOW-IT-WORKS.md`'s "Accounts and roles" section for
+day-to-day behavior.
+
+### 12. ~~Sequential integer ids in URLs~~ — done
+
+`Handover`, `Departure`, and `User` now use UUID primary keys instead of
+guessable, enumerable integers. Migrated automatically on first startup
+against an old database — see `DECISIONS.md` for the migration itself
+and what it had to work around.
 
 ---
 
