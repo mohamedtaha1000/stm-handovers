@@ -49,6 +49,7 @@ import asset_register
 import documents
 import employees
 import settings
+import templates
 from documents import (
     batch_records, collect_values, display_filename, form_data_from_record,
     generated_filename, scoped_form, stamp_record, write_document,
@@ -1171,7 +1172,135 @@ def resignation():
         tokens=leaver_email.TOKENS,
         clause_token=leaver_email.CLAUSE_TOKEN,
         clause_template=leaver_email.CLAUSE_TEMPLATE,
+        recorded=departure_rows(),
     )
+
+
+# The details a resignation record keeps, in the order the page asks for
+# them. Separate from leaver_email.FORM_FIELDS because that list is about
+# writing the two emails - this one is about correcting a record that has
+# already been written, so it has the date and not the equipment.
+DEPARTURE_FIELDS = (
+    {"key": "name", "label": "Full name (Arabic)", "hint": "Arabic"},
+    {"key": "name_en", "label": "Name in English", "hint": "English"},
+    {"key": "code", "label": "Employee code"},
+    {"key": "department", "label": "Department", "options": templates.DEPARTMENTS},
+    {"key": "email", "label": "Email"},
+    {"key": "left_on", "label": "Left on", "placeholder": "16/9/2026"},
+)
+# The two names keep the rules the rest of the app uses for them.
+for _f in DEPARTURE_FIELDS:
+    _rule = {x["key"]: x for x in templates.EMPLOYEE_FIELDS_WITH_EMAIL}.get(_f["key"])
+    if _rule and _rule.get("pattern"):
+        _f["pattern"] = _rule["pattern"]
+        _f["pattern_msg"] = _rule["pattern_msg"]
+
+
+def departure_rows():
+    """Every recorded resignation, newest first, with where each one's
+    details actually come from.
+
+    A person who has handover documents on file is described BY those
+    documents on the register, so correcting their name means correcting
+    the document - fixing the resignation record would change nothing
+    anyone can see. The list says which of the two it is rather than
+    letting someone edit the wrong one.
+    """
+    by_identity = {}
+    for row in register_rows():
+        by_identity.setdefault(row["identity"], []).append(row)
+    out = []
+    for gone in Departure.query.all():
+        mine = by_identity.get(gone.identity, [])
+        newest = max(mine, key=lambda r: (r["sort_date"] or date.min, r["record_id"]),
+                     default=None)
+        out.append({
+            "id": gone.id,
+            "identity": gone.identity,
+            "name": (newest or {}).get("name") or gone.name or "",
+            "name_en": (newest or {}).get("name_en") or gone.name_en or "",
+            "code": (newest or {}).get("code") or gone.code or "",
+            "department": (newest or {}).get("department") or gone.department or "",
+            "email": (newest or {}).get("email") or gone.email or "",
+            "left_on": gone.left_on or "",
+            "by": gone.recorded_by or "",
+            "from_document": newest["record_id"] if newest else None,
+            "laptops": len(mine),
+        })
+    out.sort(key=lambda r: (asset_register.parse_date(r["left_on"]) or date.min,
+                            r["name"]), reverse=True)
+    return out
+
+
+@app.route("/resignation/<int:departure_id>/edit", methods=["GET", "POST"])
+@login_required
+def edit_departure(departure_id):
+    """Correct a recorded resignation.
+
+    The register is a report, not a record: it is rewritten from this
+    database every time anything changes, so a correction typed into the
+    spreadsheet is gone by the next document. This is where it sticks.
+    """
+    gone = Departure.query.get_or_404(departure_id)
+    if request.method == "POST":
+        typed = {f["key"]: request.form.get(f["key"], "").strip()
+                 for f in DEPARTURE_FIELDS}
+        errors = [f["pattern_msg"] for f in DEPARTURE_FIELDS
+                  if f.get("pattern") and typed[f["key"]]
+                  and not re.fullmatch(f["pattern"], typed[f["key"]])]
+        if not typed["name"] and not typed["name_en"]:
+            errors.append("A resignation needs a name, in one script or the other.")
+
+        # The employee code is the identity. Changing it moves the record
+        # onto a different person, so it must not land on one that is
+        # already there.
+        wanted = typed_identity(typed["name"], typed["code"])
+        clash = (Departure.query.filter_by(identity=wanted).first()
+                 if wanted and wanted != gone.identity else None)
+        if clash is not None:
+            errors.append(f"{clash.name or wanted} is already recorded as resigned "
+                          f"under that code, so this one cannot take it too.")
+        if errors:
+            for message in errors:
+                flash(message, "error")
+            return render_template("departure_edit.html", fields=DEPARTURE_FIELDS,
+                                   typed=typed, gone=gone)
+
+        for key, value in typed.items():
+            setattr(gone, key, value)
+        if wanted:
+            gone.identity = wanted
+        gone.recorded_by = session.get("display_name", "-")
+        db.session.commit()
+        problem = refresh_register()
+        if problem:
+            flash(problem, "info")
+        flash(f"{gone.name_en or gone.name} updated on the resignation sheet.",
+              "success")
+        return redirect(url_for("resignation"))
+
+    return render_template("departure_edit.html", fields=DEPARTURE_FIELDS,
+                           typed={f["key"]: getattr(gone, f["key"], "") or ""
+                                  for f in DEPARTURE_FIELDS},
+                           gone=gone)
+
+
+@app.route("/resignation/<int:departure_id>/remove", methods=["POST"])
+@login_required
+def remove_departure(departure_id):
+    """Take somebody off the resignation sheet - because they were
+    recorded by mistake, or twice. Anything they were holding goes back
+    to Held, since the only reason it said Left was this record."""
+    gone = Departure.query.get_or_404(departure_id)
+    who = gone.name_en or gone.name or gone.identity
+    db.session.delete(gone)
+    db.session.commit()
+    problem = refresh_register()
+    if problem:
+        flash(problem, "info")
+    flash(f"{who} taken off the resignation sheet. Anything they held is "
+          f"back to Held in the register.", "success")
+    return redirect(url_for("resignation"))
 
 
 @app.route("/delete/<int:record_id>", methods=["POST"])

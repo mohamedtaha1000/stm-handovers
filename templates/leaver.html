@@ -96,6 +96,62 @@
     </div>
   </div>
 
+    {#
+      Everything already on the resignation sheet, so a record with a
+      name in the wrong column can be found and corrected. The register
+      itself is rewritten from these rows every time a document is made,
+      which is why a correction typed into the spreadsheet never lasts.
+    #}
+    {% if recorded %}
+    <div class="card">
+      <div class="section-title">
+        <h2>Already recorded</h2>
+        <span class="filled-badge">{{ recorded|length }}</span>
+      </div>
+      <p class="leaver-note" hidden></p>
+      <ul class="recorded-list">
+        {% for person in recorded %}
+        <li>
+          <span class="recorded-who">
+            <b>{{ person.name or person.name_en or person.identity }}</b>
+            <span>{{ person.name_en if person.name else '' }}</span>
+            <i>
+              {%- if person.code %}{{ person.code }} · {% endif -%}
+              {%- if person.department %}{{ person.department }} · {% endif -%}
+              left {{ person.left_on or 'date not recorded' }}
+              {%- if person.laptops %} · {{ person.laptops }} in the register{% endif -%}
+            </i>
+          </span>
+          <span class="recorded-actions">
+            {% if person.from_document %}
+            <a class="icon-action" href="{{ url_for('edit_document', record_id=person.from_document) }}"
+               data-tip="Their details on the register come from their handover document, so they are corrected there, not here."
+               aria-label="Edit the document for {{ person.name }}">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+            </a>
+            {% else %}
+            <a class="icon-action" href="{{ url_for('edit_departure', departure_id=person.id) }}"
+               data-tip="Correct this record — the name in the wrong column, a department, the date."
+               aria-label="Correct the resignation record for {{ person.name }}">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+            </a>
+            {% endif %}
+            <form method="post" action="{{ url_for('remove_departure', departure_id=person.id) }}"
+                  class="delete-form"
+                  onsubmit="return confirm('Take {{ person.name_en or person.name }} off the resignation sheet? Anything they were holding goes back to Held.');">
+              <button type="submit" class="icon-action danger"
+                      data-tip="Take them off the sheet — recorded by mistake, or twice. Anything they held goes back to Held."
+                      aria-label="Remove the resignation record for {{ person.name }}">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6h16Z"/></svg>
+              </button>
+            </form>
+          </span>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
   {# What the register still has against whoever is typed in. #}
   <aside class="card aside-card">
     <div class="aside-title">Still on file</div>
