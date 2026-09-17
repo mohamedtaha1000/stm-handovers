@@ -52,7 +52,7 @@ import settings
 import templates
 from documents import (
     batch_records, collect_values, display_filename, form_data_from_record,
-    generated_filename, scoped_form, stamp_record, write_document,
+    generated_filename, rebuild_document, scoped_form, stamp_record, write_document,
 )
 from employees import (
     departures_by_identity, employee_identity, equipment_summary, find_duplicate,
@@ -665,6 +665,32 @@ def get_file(record_id):
     )
 
 
+@app.route("/history/<int:record_id>/regenerate", methods=["POST"])
+@login_required
+def regenerate_file(record_id):
+    """Rebuild this record's .docx from what is stored on it, for when the
+    file under generated/ has gone missing on its own - deleted from the
+    folder by hand, or lost to an interrupted OneDrive sync - while the
+    record itself is still on file.
+
+    A deliberate action from History, not something that happens quietly
+    on download: the row is found by searching, same as anything else
+    here, and the button only appears once the file is confirmed missing."""
+    record = Handover.query.get_or_404(record_id)
+    problem = rebuild_document(record)
+    if problem:
+        flash(problem, "error")
+    else:
+        flash(f"The document for {record.name} has been recreated from its saved record.",
+              "success")
+    keep = {}
+    for key in ("q", "type", "from", "to", "page"):
+        val = request.form.get(key, "")
+        if val:
+            keep[key] = val
+    return redirect(url_for("history", **keep))
+
+
 # ----------------------------------------------------------------------
 # History (search + permanent delete)
 # ----------------------------------------------------------------------
@@ -724,6 +750,12 @@ def history():
         page=page, pages=pages, total=total, page_size=HISTORY_PAGE_SIZE,
         equipment={r.id: equipment_summary(r) for r in records},
         mailto={r.id: mailto_link([r]) for r in records},
+        # So the row can offer "Regenerate" instead of "Download" for the
+        # rare case where the .docx is gone from generated/ but the record
+        # is not - lost from the folder some other way, since History's
+        # own Delete removes both together.
+        missing_file={r.id for r in records
+                      if not (settings.GENERATED_DIR / r.filename).exists()},
         filters=active_filters(q, type_filter, date_from, date_to),
         matching=total,
         # `total` is what the current filters match; the heading wants the
@@ -1048,7 +1080,7 @@ def mark_left():
     # edited away, and the request is refused rather than half-applied.
     typed = {f["key"]: request.form.get(f["key"], "").strip()
              for f in leaver_email.FORM_FIELDS}
-    missing = [f["label"] for f in leaver_email.FORM_FIELDS if not typed[f["key"]]]
+    missing = [f["label"] for f in leaver_email.REQUIRED_FIELDS if not typed[f["key"]]]
     # The two name boxes each refuse the other's script. Checked here as
     # well as in the browser, for the same reason everything else on this
     # page is: a pattern attribute can be deleted in the developer tools.
@@ -1066,7 +1098,7 @@ def mark_left():
         # can never leave this sentence saying the wrong number.
         message = ("Nothing was changed: " + ", ".join(missing)
                    + (" is" if len(missing) == 1 else " are")
-                   + f" still empty, and all {len(leaver_email.FORM_FIELDS)} are "
+                   + f" still empty, and all {len(leaver_email.REQUIRED_FIELDS)} are "
                      "needed before anyone can be recorded as resigned.")
         if wants_json:
             return {"marked": 0, "message": message, "incomplete": missing}, 400
@@ -1170,6 +1202,7 @@ def resignation():
         token_links=leaver_links({**leaver_email.TOKENS,
                                   "dept_clause": leaver_email.CLAUSE_TOKEN}),
         tokens=leaver_email.TOKENS,
+        optional_keys=leaver_email.OPTIONAL_KEYS,
         clause_token=leaver_email.CLAUSE_TOKEN,
         clause_template=leaver_email.CLAUSE_TEMPLATE,
         recorded=departure_rows(),
@@ -1327,7 +1360,7 @@ def delete_history(record_id):
 
 
 if __name__ == "__main__":
-    debug = os.environ.get("FLASK_DEBUG", "1") == "1"
+    debug = os.environ.get("FLASK_DEBUG", "0") == "1"
     app.run(debug=debug, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
 
 

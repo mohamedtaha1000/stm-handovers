@@ -111,11 +111,25 @@
             {% if r.updated_at %}<div class="cell-sub edited-note" title="Last edited {{ r.updated_at.strftime('%Y-%m-%d %H:%M') }}">edited by {{ r.updated_by }}</div>{% endif %}
           </td>
           <td class="actions no-print">
+            {% if r.id in missing_file %}
+            <form method="post" action="{{ url_for('regenerate_file', record_id=r.id) }}" class="delete-form">
+              <input type="hidden" name="q" value="{{ q }}">
+              <input type="hidden" name="type" value="{{ type_filter }}">
+              <input type="hidden" name="from" value="{{ date_from }}">
+              <input type="hidden" name="to" value="{{ date_to }}">
+              <button type="submit" class="icon-action warn"
+                      data-tip="The file for {{ r.name }} is missing from the server. Recreate it from this record's saved details."
+                      aria-label="Regenerate the missing document for {{ r.name }}">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>
+              </button>
+            </form>
+            {% else %}
             <a class="icon-action download" href="{{ url_for('get_file', record_id=r.id) }}"
                data-tip="Download the Word file for {{ r.name }}, exactly as it was generated."
                aria-label="Download the document for {{ r.name }}">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16"/></svg>
             </a>
+            {% endif %}
             <a class="icon-action" href="{{ url_for('edit_document', record_id=r.id) }}"
                data-tip="Correct the details and rewrite the document. The old file is replaced, and the history records that it was edited."
                aria-label="Edit the document for {{ r.name }}">
@@ -166,11 +180,25 @@
         <span class="record-card-date">{{ r.handover_date }}</span>
       </div>
       <div class="record-card-actions">
+        {% if r.id in missing_file %}
+        <form method="post" action="{{ url_for('regenerate_file', record_id=r.id) }}" class="delete-form full-download">
+          <input type="hidden" name="q" value="{{ q }}">
+          <input type="hidden" name="type" value="{{ type_filter }}">
+          <input type="hidden" name="from" value="{{ date_from }}">
+          <input type="hidden" name="to" value="{{ date_to }}">
+          <button type="submit" class="button full-download warn"
+                  data-tip="The file for {{ r.name }} is missing from the server. Recreate it from this record's saved details.">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>
+            Regenerate
+          </button>
+        </form>
+        {% else %}
         <a class="button full-download" href="{{ url_for('get_file', record_id=r.id) }}"
            data-tip="Download the Word file for {{ r.name }}.">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16"/></svg>
           Download
         </a>
+        {% endif %}
         <a class="tap-action" href="{{ url_for('edit_document', record_id=r.id) }}"
            data-tip="Correct the details and rewrite the document."
            aria-label="Edit the document for {{ r.name }}">

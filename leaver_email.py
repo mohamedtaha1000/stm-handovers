@@ -57,8 +57,11 @@ FORM_FIELDS = (
     # The employee code is what the rest of the app recognises a person
     # by, so asking for it here is what makes a resignation land on the
     # right person - and fills the column the sheet was leaving blank
-    # for anyone with no documents behind them.
-    {"key": "code", "label": "Employee code", "placeholder": "10142"},
+    # for anyone with no documents behind them. Optional: someone can
+    # leave without ever having been assigned one, or without whoever is
+    # filling this in knowing it offhand.
+    {"key": "code", "label": "Employee code", "placeholder": "10142",
+     "optional": True, "hint": "optional"},
     {"key": "department", "label": "Department",
      "placeholder": "Pick one, or type a new one", "options": DEPARTMENTS},
     {"key": "email", "label": "Email", "placeholder": "asarour@stm.com.eg"},
@@ -69,6 +72,13 @@ FORM_FIELDS = (
 FIELD_KEYS = tuple(f["key"] for f in FORM_FIELDS)
 TOKENS = {key: f"__{key.upper()}__" for key in FIELD_KEYS}
 
+# Everything but the code has to be there before the buttons light up or
+# the register accepts the post. The code is the one box that can stay
+# blank - not everyone has one to hand - so it is carved out here rather
+# than checked field-by-field wherever FORM_FIELDS is walked for that.
+OPTIONAL_KEYS = tuple(f["key"] for f in FORM_FIELDS if f.get("optional"))
+REQUIRED_FIELDS = tuple(f for f in FORM_FIELDS if f["key"] not in OPTIONAL_KEYS)
+
 # The department is named twice in the resignation note - once in the
 # sentence, once in the details - and the sentence has to lose its whole
 # clause when there is no department rather than read "from the
@@ -78,13 +88,13 @@ TOKENS = {key: f"__{key.upper()}__" for key in FIELD_KEYS}
 CLAUSE_TOKEN = "__DEPT_CLAUSE__"
 CLAUSE_TEMPLATE = f" from the {TOKENS['department']} department"
 
-# The five lines both messages share, in the order the team writes them.
-# Deliberately NOT the same list as FORM_FIELDS: the form also asks for
-# the employee code, because that is how a person is recognised - but
-# these two messages are the team's own wording and gain nothing from a
-# sixth line they never asked for.
+# The lines both messages share, in the order the team writes them. The
+# employee code sits right after the name, matching where it is asked for
+# on the form; it prints blank rather than disappearing when nobody typed
+# one, same as every other detail here.
 DETAIL_LINES = (
     ("Name", "name_en"),
+    ("Employee Code", "code"),
     ("Department", "department"),
     ("Email", "email"),
     ("Computer Name", "computer_name"),
@@ -93,13 +103,13 @@ DETAIL_LINES = (
 
 
 def detail_rows(person):
-    """The five details as (label, value) pairs.
+    """The details as (label, value) pairs.
 
     One description of what the details ARE, so the bulleted list and the
     table are two renderings of the same thing and cannot drift apart.
     Every pair is present even when its value is missing: these go to a
-    team that reads the same five lines every time, and a gap is a
-    clearer prompt to fill something in than a silently absent row.
+    team that reads the same lines every time, and a gap is a clearer
+    prompt to fill something in than a silently absent row.
     """
     return [(label, (person.get(key) or "").strip())
             for label, key in DETAIL_LINES]
@@ -164,18 +174,18 @@ def resignation_body(person):
 
 # ---------------------------------------------------------------- HTML
 #
-# Outlook, asked directly, takes an HTML body - so the five details can
-# be a ruled table instead of a bulleted list. A mailto: link cannot
-# carry anything but plain text, so both renderings are kept: same
-# words, same order, same five rows, and the plain one is what the
-# fallback links and any other mail client get.
+# Outlook, asked directly, takes an HTML body - so the details can be a
+# ruled table instead of a bulleted list. A mailto: link cannot carry
+# anything but plain text, so both renderings are kept: same words, same
+# order, same rows, and the plain one is what the fallback links and any
+# other mail client get.
 #
 # How a table LOOKS is not decided here: email_html renders every
 # message this app sends, so they all look like they came from the same
 # place.
 
 def detail_table(person):
-    """The five details as a two-column table: label, then value."""
+    """The details as a two-column table: label, then value."""
     return email_html.table(detail_rows(person))
 
 

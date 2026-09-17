@@ -5,36 +5,38 @@ says what it is, why it matters, and what "done" looks like.
 
 ---
 
-### 2. Decide what to do about the public GitHub repository
+### 2. ~~Decide what to do about the public GitHub repository~~ — decided: fresh repo
 
-`github.com/mohamedtaha1000/Handovers` is **public** and holds this app's
-source, the ten Arabic `.docx` templates and the README. `.env` and
-`instance/` are gitignored, so the password and the database are not in
-it — but an employee's real name, mobile number and national ID were in a
-template early on and may still be in the git history.
+Rather than rewrite history on `github.com/mohamedtaha1000/Handovers`, the
+plan is to delete it and create a new one — a clean history has nothing
+old to leak, which is simpler than scrubbing commits. You're handling the
+GitHub delete/create yourself.
 
-Making the repository private does not retract anything already cloned or
-indexed, so this is a judgement call about what is acceptable, not a
-technical fix.
+Along the way, `.gitignore` had an old unresolved merge conflict actually
+committed into it (literal `<<<<<<<`/`=======`/`>>>>>>>` markers) — fixed,
+merged cleanly, `.env`/`instance/`/`generated/*.docx` still ignored.
 
-**Done when:** you have decided, and either made it private, rewritten
-the history, or consciously accepted it.
+Also handled: `generated/*.docx` (the real per-employee documents with
+PII) was already gitignored and never pushed — that part needed no repo
+change. What it did need was a way back if one of those files is ever
+lost some other way — deleted from the folder by hand, or an interrupted
+OneDrive sync — while its record is still there: History now shows a
+"Regenerate" action (amber refresh icon) in place of Download for exactly
+that row, which rebuilds the `.docx` from the record's own stored
+`fields_json` on request. Deliberately not automatic on download — History
+→ Delete still permanently removes the row and file together, unchanged.
+Tested by generating a document, deleting its file from `generated/`, and
+regenerating it from History — it came back byte-identical in size,
+without touching `updated_by`/`updated_at` (this recovers a record, it
+does not edit one). This only covers `generated/` — the ten blank
+templates in `doc_templates/` are hand-authored and have no database
+representation, so losing those is still unrecoverable; back them up
+separately if that ever matters.
 
-### 3. Turn off the debugger
+### 3. ~~Turn off the debugger~~ — done
 
-`app.py` ends with:
-
-```python
-debug = os.environ.get("FLASK_DEBUG", "1") == "1"
-app.run(debug=debug, host="0.0.0.0", port=...)
-```
-
-The default is **on**, and `0.0.0.0` means every machine on the network
-can reach it. Flask's debugger offers an interactive Python console on
-any error — to whoever hits the error.
-
-**Done when:** `FLASK_DEBUG=0` is in `.env`, or the default in `app.py` is
-flipped to `"0"`.
+The default in `app.py` is now `FLASK_DEBUG=0`; the interactive debugger
+no longer opens by default on `0.0.0.0`.
 
 ---
 
@@ -48,37 +50,30 @@ mislead whoever reads the folder next — including you in six months.
 
 **Done when:** the file is gone and the app still starts.
 
-### 5. Replace `README.md`
+### 5. ~~Replace `README.md`~~ — done
 
-It describes a `fill_logic.py::TEMPLATES` registry that no longer exists,
-and predates the register, the resignation flow, the emails and the two
-name fields. `HOW-IT-WORKS.md` is the current explanation.
-
-**Done when:** the README either points at `HOW-IT-WORKS.md` or is
-rewritten to match reality.
+Now points at `HOW-IT-WORKS.md` for behavior, and its project structure
+and features list include the resignation/leaver flow and the files that
+support it.
 
 ---
 
 
 ## Decisions still open
 
-### 8. Colleagues get plain-text emails
+### 8. ~~Colleagues get plain-text emails~~ — decided: accepted as is
 
 Anyone opening the app from their own desk gets the `mailto:` fallback —
-correct addresses and details, but a bulleted list instead of tables. The
-app opens drafts in the Outlook next to *itself*, and nothing a server can
-do reaches another PC's Outlook.
+correct addresses and details, but a bulleted list instead of tables.
+Decided against sending over SMTP instead: that would mean every email
+goes out immediately with no human reviewing it in Outlook first, which
+matters more than the formatting. No code change.
 
-Options: accept it; send from the server over SMTP instead (everyone gets
-identical HTML, but nobody reviews it before it goes, and it needs a
-mailbox the app can send from); or run a copy per machine (not advised —
-it splits the database).
+### 9. ~~The employee code is not in the leaver emails~~ — done
 
-### 9. The employee code is not in the leaver emails
-
-The two leaver messages carry the team's own five lines. The form now also
-asks for the employee code, which is not among them. Say the word if it
-should be.
+Added to both messages, right after the name. Left optional on the form —
+not everyone has one to hand — so it prints blank rather than blocking
+either "Mark as left" or the two single-email links.
 
 ### 10. Two forms are nearly page-full
 

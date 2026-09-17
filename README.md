@@ -5,6 +5,10 @@ receipt Word documents from a browser form, replacing manual editing of
 `.docx` files. Every generated document is logged to a searchable,
 filterable history with export and print support.
 
+This README covers setup and deployment. For a plain-English tour of how
+the app actually behaves — the register, the resignation flow, the
+emails, the two name fields — see [HOW-IT-WORKS.md](HOW-IT-WORKS.md).
+
 ## Contents
 
 - [Overview](#overview)
@@ -123,8 +127,10 @@ employees.py             Who a person is across their documents, and
                          what they still hold
 asset_register.py        The laptop register spreadsheet
                          (Laptops and Leavers sheets)
+email_html.py            How every email's tables look (HTML)
 notify_email.py          The "this has been handed over" message
 leaver_email.py          The two messages sent when someone leaves
+outlook_com.py           Opening drafts in the local Outlook
 app.py                   Flask application: routes and the web layer only
 doc_templates/            One placeholder Word template per document type:
                              Laptop Handover Template.docx
@@ -178,6 +184,14 @@ History page supports:
 
 Search, filters, and pagination are reflected in the URL, so a filtered
 view can be bookmarked or shared.
+
+### Resignation
+
+A separate page records an employee leaving: it releases any laptop on
+file back to `Held`, and opens the two leaver emails (EMS deactivation
+and a resignation notice to the team) as drafts. See
+[HOW-IT-WORKS.md](HOW-IT-WORKS.md) for how this interacts with the
+register.
 
 ## Deployment
 

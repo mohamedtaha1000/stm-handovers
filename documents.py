@@ -18,7 +18,7 @@ import logging
 import os
 import re
 import secrets
-from datetime import datetime
+from datetime import date, datetime
 
 import builders
 import settings
@@ -224,6 +224,28 @@ def form_data_from_record(record):
         if suffix and isinstance(value, str) and value.endswith(suffix):
             data[f["key"]] = value[: -len(suffix)]
     return data
+
+
+def rebuild_document(record):
+    """Recreate this record's .docx exactly as it already reads, from the
+    values stored on the row - for when the file in generated/ has been
+    lost (deleted by hand, or an interrupted OneDrive sync) but the
+    record itself is still there.
+
+    Not the same thing as an edit: nothing about the record changes, so
+    updated_by/updated_at are left alone - this recovers what was already
+    on file, it does not correct it. Writes back under the record's own
+    filename, so nothing else needs to change to find it again.
+    """
+    template_id = record.template_id
+    if template_id not in TEMPLATES:
+        return "That document was made from a template this site no longer has."
+    form = form_data_from_record(record)
+    _values, fill_data, _date_obj, errors = collect_values(
+        template_id, form, existing=record.fields)
+    if errors:
+        return "Could not rebuild: " + " ".join(errors)
+    return write_document(template_id, fill_data, record.filename)
 
 
 def scoped_form(template_id, form):

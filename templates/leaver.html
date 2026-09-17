@@ -177,6 +177,7 @@
     if (!form || !links.length) return;
 
     var TOKENS = {{ tokens|tojson }};
+    var OPTIONAL = {{ optional_keys|tojson }};
     var CLAUSE_TOKEN = {{ clause_token|tojson }};
     var CLAUSE_TEMPLATE = {{ clause_template|tojson }};
     var LABELS = {{ fields|map(attribute='label')|list|tojson }};
@@ -194,7 +195,9 @@
         var wrong = box && values[key] && box.pattern
           && !new RegExp('^(?:' + box.pattern + ')$', 'u').test(values[key]);
         if (box) box.classList.toggle('is-wrong', !!wrong);
-        if (!values[key] || wrong) empty.push(LABELS[i]);
+        /* Optional boxes stay blank without holding up the buttons - only
+           a value that is actually wrong still counts against them. */
+        if ((!values[key] && OPTIONAL.indexOf(key) === -1) || wrong) empty.push(LABELS[i]);
       });
 
       /* The department appears in the sentence as well as the details,

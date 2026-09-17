@@ -291,6 +291,8 @@ input:invalid:not(:placeholder-shown) { border-color: var(--error-text); }
 .button-secondary.danger:hover, .tap-action.danger:hover {
   background: var(--error-bg); color: var(--error-text); border-color: var(--error-border);
 }
+.button.warn { background: var(--warn-bg); color: var(--warn-text); box-shadow: none; border-color: #f0dcb4; }
+.button.warn:hover { background: #f5e6c3; color: var(--warn-text); }
 .full { display: flex; width: 100%; }
 button:disabled, .button.is-disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
 button:disabled:hover { background: var(--accent); }
@@ -526,6 +528,8 @@ button.icon-action:hover { background: var(--panel); }
 .icon-action:hover { background: var(--panel); color: var(--text); }
 .icon-action.download:hover { background: var(--accent-tint); color: var(--accent-dark); }
 .icon-action.danger:hover { background: var(--error-bg); color: var(--error-text); }
+.icon-action.warn, button.icon-action.warn { color: var(--warn-text); }
+.icon-action.warn:hover { background: var(--warn-bg); color: var(--warn-text); }
 .delete-form { display: inline-flex; }
 .edited-note { display: block; font-size: 12.5px; color: var(--faint); }
 

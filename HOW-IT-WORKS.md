@@ -4,8 +4,7 @@ A plain-English tour of what this app is, where everything lives, and the
 handful of things that are surprising until someone tells you. Written
 for the person who maintains it — which is you.
 
-`README.md` is older than this file and still describes a `fill_logic.py`
-that no longer exists. Trust this one.
+`README.md` covers setup and deployment; this file covers behavior.
 
 ---
 
@@ -173,6 +172,19 @@ in `DEPARTMENTS`.
 record with an off-list model is allowed to save unchanged, so tightening
 a list never makes old documents read-only.
 
+**A missing file under `generated/` can be rebuilt from History.** Every
+row's `fields_json` has everything the template needs, so if a `.docx` is
+deleted from disk (by hand, or an interrupted OneDrive sync) while its
+record is still there, that row shows an amber "Regenerate" action in
+place of Download — search for the person, then rebuild it on request.
+This is deliberately not automatic: History's own Delete still removes
+the row and file together, for good, same as always. Regenerating does
+not count as editing — `updated_by`/`updated_at` are left alone, since
+nothing about the record changed. None of this applies to
+`doc_templates/` — the ten blank templates are hand-authored files with
+no representation in the database, so losing one of those is
+unrecoverable from within the app.
+
 ---
 
 ## Running it
@@ -200,6 +212,6 @@ Then `http://localhost:5000`. Settings live in `.env` — see
 
 Moving the folder out of OneDrive resolves both.
 
-**`app.py` still runs with `debug=True` and `host="0.0.0.0"` by default.**
-That is a debugger exposed to the whole network. Fine on a trusted LAN,
-not fine beyond it.
+**`app.py` still binds `host="0.0.0.0"` by default** — reachable from
+every machine on the network. Debug mode itself now defaults to off
+(`FLASK_DEBUG=1` turns it back on for local troubleshooting).
