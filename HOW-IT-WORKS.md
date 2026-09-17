@@ -114,6 +114,44 @@ server.
 
 ---
 
+## Accounts and roles
+
+Two roles: **Staff** does the everyday work - make documents, record
+resignations, look people up, download and correct their own documents.
+**Admin** can additionally delete anything, edit a document someone else
+made, and manage accounts from "Manage users".
+
+**A Staff member's History only shows what they made.** The query is
+scoped to their own account server-side - a record they don't own isn't
+hidden with CSS, it simply isn't in the page at all. Download, Edit and
+Regenerate on a row they can't see aren't reachable either, even by
+typing the URL directly (a 403, not a silent failure).
+
+**A record made before accounts existed belongs to nobody.** There's no
+reliable way to match a free-typed name from the old shared-password era
+back to a real account, so every one of those records is Admin-only
+until an Admin explicitly assigns it to someone via the "Owner account"
+field on its edit page (also how you'd fix a document accidentally
+attributed to the wrong person). Assigning it is the only way a Staff
+member gets a pre-existing record into their own History.
+
+**Accounts are only ever created by an Admin**, from "Manage users" -
+there's no sign-up page. Every new account, and every password reset,
+gets the exact same fixed starting password
+(`settings.DEFAULT_USER_PASSWORD`, default `Abc@123456789`), never one
+an Admin makes up per person. The account is locked to a "set your own
+password" screen the moment it first logs in - nothing else works until
+that's done, checked on every request rather than only at login, so
+there's no way to skip it by bookmarking a different page.
+
+**The very first Admin account is the one exception.** It's created
+automatically the first time the app starts with no accounts at all,
+from `ADMIN_USERNAME`/`ADMIN_PASSWORD` in `.env` - a real password
+someone chose during setup, not the shared default, so it isn't forced
+through the change-password screen.
+
+---
+
 ## The modules
 
 Flask appears in exactly two files (`app.py` and `models.py`). Everything
@@ -121,11 +159,11 @@ else is plain Python that can be read, tested and understood on its own.
 
 | File | Lines | What it knows about |
 |---|---|---|
-| `settings.py` | 83 | Every configurable value, read from `.env` |
+| `settings.py` | 95 | Every configurable value, read from `.env` |
 | `templates.py` | 412 | The registry: the ten document types and their fields |
 | `ooxml.py` | 1228 | The Word engine. Names no document type |
 | `builders.py` | 238 | Three shapes that serve all ten types |
-| `models.py` | 128 | The two tables, and the migration that adds columns |
+| `models.py` | 211 | `Handover`, `Departure`, `User`, and the migration that adds columns |
 | `documents.py` | 245 | Form → values → `.docx` → history row |
 | `employees.py` | 216 | Identity, duplicates, lookups, register rows |
 | `asset_register.py` | 291 | The Excel file: both sheets |
@@ -133,7 +171,7 @@ else is plain Python that can be read, tested and understood on its own.
 | `notify_email.py` | 291 | The handover notification |
 | `leaver_email.py` | 223 | The two leaver messages |
 | `outlook_com.py` | 133 | Talking to Outlook. Knows nothing else |
-| `app.py` | 1334 | Routes and the web layer only |
+| `app.py` | 1606 | Routes, auth/roles, and the web layer only |
 
 `doc_templates/` holds the ten Arabic `.docx` templates. The app fills
 `FILL_*` placeholders in them; it never writes a document from scratch.

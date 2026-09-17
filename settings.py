@@ -34,8 +34,20 @@ INSTANCE_DIR.mkdir(exist_ok=True)
 
 DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{INSTANCE_DIR / 'handovers.db'}")
 
-TEAM_PASSWORD = os.environ.get("TEAM_PASSWORD") or "changeme"
 SECRET_KEY = os.environ.get("SECRET_KEY")
+
+# The very first Admin account, created once - only when no account
+# exists yet. Every account after that is made by an Admin from the
+# "Manage users" page, not from these variables.
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "").strip()
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "").strip()
+ADMIN_DISPLAY_NAME = os.environ.get("ADMIN_DISPLAY_NAME", "Admin").strip()
+
+# What every account an Admin creates (or resets) starts with. Never
+# chosen by the Admin per-account on purpose - always this one value -
+# because the person is required to replace it with something only they
+# know before they can do anything else.
+DEFAULT_USER_PASSWORD = os.environ.get("DEFAULT_USER_PASSWORD") or "Abc@123456789"
 
 def addresses(raw):
     """One recipient or several, however they were written.

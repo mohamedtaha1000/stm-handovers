@@ -81,6 +81,15 @@ either "Mark as left" or the two single-email links.
 Arabic text is ever added to either, expect a second page — the fix is to
 find the space rather than let it spill.
 
+### 11. ~~Individual per-user logins and Role-Based Access Control~~ — done
+
+Replaced the single shared team password with real accounts (two roles:
+Admin, Staff). Admin-only: deleting any record, editing a record someone
+else created, managing accounts. A Staff member's History only shows
+documents they created. See `DECISIONS.md` for the shape of it and why,
+and `HOW-IT-WORKS.md`'s "Accounts and roles" section for day-to-day
+behavior.
+
 ---
 
 ## Ideas, not commitments
@@ -91,3 +100,5 @@ find the space rather than let it spill.
   would help at a hundred.
 - **Bold headings in the handover notification.** Now possible for the
   Outlook path, since it takes HTML.
+- **Production-hardening measures** — rate limiting, CSRF tokens — worth
+  adding if this is ever exposed beyond the office network.

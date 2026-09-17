@@ -37,6 +37,13 @@
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
           Resignation
         </a>
+        {% if session.get('role') == 'admin' %}
+        <a href="{{ url_for('admin_users') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('admin_users') }}"
+           data-tip="Create accounts, change roles, deactivate a login, reset a password.">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          Manage users
+        </a>
+        {% endif %}
       </nav>
       <span class="who">
         {# Initials rather than a generic silhouette: on a shared-login
@@ -44,6 +51,8 @@
         <span class="who-badge"
               data-tip="You are signed in as {{ session.get('display_name') }} — this is the name recorded against every document you make.">{{ session.get('display_name', '?')|initials }}</span>
         <span class="who-name">{{ session.get('display_name') }}</span>
+        <a href="{{ url_for('change_password') }}" class="logout"
+           data-tip="Change the password for your own account.">Change password</a>
         <a href="{{ url_for('logout') }}" class="logout"
            data-tip="Sign out. Nothing is lost — every document is already saved.">Log out</a>
       </span>
@@ -75,7 +84,7 @@
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
             {% endif %}
             <div>
-              {% if kind == 'error' %}<b class="flash-title">{{ 'Please fix the following' if groups[kind]|length > 1 else 'Could not save' }}</b>{% endif %}
+              {% if kind == 'error' %}<b class="flash-title">{{ 'Please fix the following' if groups[kind]|length > 1 else 'Error' }}</b>{% endif %}
               {% for m in groups[kind] %}<p>{{ m }}</p>{% endfor %}
             </div>
           </div>

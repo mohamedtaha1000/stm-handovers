@@ -22,6 +22,21 @@
       action="{% if record %}{{ url_for('edit_document', record_id=record.id) }}{% else %}{{ url_for('new_document', template_id=template_id) }}{% endif %}">
   {% if duplicate %}<input type="hidden" name="confirm_duplicate" value="1">{% endif %}
 
+  {% if record and owners %}
+  <div class="card section">
+    <div class="field">
+      <label for="owner_user_id">Owner account<span class="field-note">Admin only</span></label>
+      <select id="owner_user_id" name="owner_user_id"
+              data-tip="Whoever this is assigned to sees and downloads this document from their own History. &quot;Unassigned&quot; means only an Admin can.">
+        <option value=""{% if not record.created_by_user_id %} selected{% endif %}>Unassigned</option>
+        {% for u in owners %}
+        <option value="{{ u.id }}"{% if record.created_by_user_id == u.id %} selected{% endif %}>{{ u.display_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+  {% endif %}
+
   <div class="card section">
     {{ ui.section_head(1, 'Employee', spec.employee_fields|length ~ ' fields · all required') }}
     {% if not record %}

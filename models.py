@@ -14,12 +14,17 @@ lets this module be imported on its own.
 """
 
 import json
+import logging
 from datetime import datetime
 
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import inspect, text
+from werkzeug.security import generate_password_hash
 
+import settings
 from templates import TEMPLATES
+
+log = logging.getLogger(__name__)
 
 db = SQLAlchemy()
 
@@ -41,6 +46,12 @@ class Handover(db.Model):
     fields_json = db.Column(db.Text)
     filename = db.Column(db.String(300), nullable=False)
     created_by = db.Column(db.String(120))
+    # Who this record belongs to, for access control - separate from
+    # created_by above, which is just the display name printed in
+    # History and can't be trusted to identify an account (free-typed,
+    # from before real accounts existed). NULL means "no verified
+    # owner" - true for every record made before this column existed.
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     # Set only once a record has actually been corrected, so "never
     # edited" stays distinguishable from "edited by the same person who
@@ -82,7 +93,42 @@ class Departure(db.Model):
     email = db.Column(db.String(200))
     left_on = db.Column(db.String(20))
     recorded_by = db.Column(db.String(120))
+    # Same split as Handover.created_by_user_id: recorded_by above is
+    # just a display name, this is the account it can actually be
+    # checked against. NULL for anything recorded before accounts
+    # existed.
+    recorded_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class User(db.Model):
+    """A real login. Replaces the single shared team password: each
+    person gets their own username, and a role decides what they can do
+    beyond the everyday work every signed-in person can already do
+    (making documents, recording resignations, looking people up)."""
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    password_hash = db.Column(db.String(255), nullable=False)
+    # What documents, the nav, and every "who did this" field call them -
+    # chosen once at account creation rather than retyped every login.
+    display_name = db.Column(db.String(120), nullable=False)
+    role = db.Column(db.String(20), nullable=False, default="staff")
+    # Deactivated rather than deleted, so their historical created_by /
+    # created_by_user_id rows stay meaningful instead of pointing at
+    # nothing.
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    # True for every account an Admin creates or resets - an Admin never
+    # chooses a real password for someone else, only ever the same fixed
+    # default, so this is what forces the person to replace it with
+    # something only they know before they can do anything else. The
+    # bootstrap admin (settings.ADMIN_PASSWORD, a real password someone
+    # chose during setup) is the one account created with this False.
+    must_change_password = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    @property
+    def is_admin(self):
+        return self.role == "admin"
 
 
 def create_all_and_migrate():
@@ -115,6 +161,9 @@ def create_all_and_migrate():
                 conn.execute(text("ALTER TABLE handover ADD COLUMN updated_by VARCHAR(120)"))
             if "updated_at" not in existing_cols:
                 conn.execute(text("ALTER TABLE handover ADD COLUMN updated_at DATETIME"))
+            if "created_by_user_id" not in existing_cols:
+                conn.execute(text(
+                    "ALTER TABLE handover ADD COLUMN created_by_user_id INTEGER"))
 
     if "departure" in inspector.get_table_names():
         existing_cols = {c["name"] for c in inspector.get_columns("departure")}
@@ -122,7 +171,41 @@ def create_all_and_migrate():
             for column, kind in (("code", "VARCHAR(60)"),
                                  ("name_en", "VARCHAR(200)"),
                                  ("department", "VARCHAR(120)"),
-                                 ("email", "VARCHAR(200)")):
+                                 ("email", "VARCHAR(200)"),
+                                 ("recorded_by_user_id", "INTEGER")):
                 if column not in existing_cols:
                     conn.execute(text(
                         f"ALTER TABLE departure ADD COLUMN {column} {kind}"))
+
+    ensure_bootstrap_admin()
+
+
+def ensure_bootstrap_admin():
+    """Create the very first Admin account from ADMIN_USERNAME/
+    ADMIN_PASSWORD, but only if no account exists yet.
+
+    This is the one and only account this app ever creates without an
+    Admin doing it through /admin/users - every other account is always
+    created by an Admin, always with the same fixed starting password
+    (see settings.DEFAULT_USER_PASSWORD), never one this app makes up on
+    its own. Once a single account exists, this is inert forever, so the
+    env vars are harmless to leave set.
+    """
+    if User.query.count() > 0:
+        return
+    if not (settings.ADMIN_USERNAME and settings.ADMIN_PASSWORD):
+        log.warning(
+            "No accounts exist yet and ADMIN_USERNAME/ADMIN_PASSWORD are "
+            "not set - nobody can log in until an admin account exists. "
+            "Set both in your .env file (or as environment variables) "
+            "and restart."
+        )
+        return
+    db.session.add(User(
+        username=settings.ADMIN_USERNAME.strip().lower(),
+        password_hash=generate_password_hash(settings.ADMIN_PASSWORD),
+        display_name=settings.ADMIN_DISPLAY_NAME,
+        role="admin",
+        must_change_password=False,
+    ))
+    db.session.commit()

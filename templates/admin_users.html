@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}Manage users{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Manage users</h1>
+  <p class="lead">Accounts are only ever created here. Every new or reset
+    password is the same starting one — whoever it's for is asked to
+    replace it the moment they log in.</p>
+</div>
+
+<div class="card">
+  <div class="section-title"><h2>Add a user</h2></div>
+  <form method="post" action="{{ url_for('admin_users_create') }}">
+    <div class="grid">
+      <div class="field">
+        <label for="username">Username</label>
+        <input id="username" name="username" required autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="display_name">Display name</label>
+        <input id="display_name" name="display_name" required autocomplete="off" placeholder="Mohamed Taha">
+      </div>
+      <div class="field">
+        <label for="role">Role</label>
+        <select id="role" name="role">
+          <option value="staff" selected>Staff</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button type="submit"
+              data-tip="Creates the account with the fixed starting password ({{ default_password }}) — they'll be forced to change it on first login.">
+        Add user
+      </button>
+    </div>
+  </form>
+</div>
+
+{% if users %}
+<div class="card wide history-card">
+  <div class="table-wrap">
+    <table class="history-table">
+      <thead>
+        <tr>
+          <th>Display name</th>
+          <th>Username</th>
+          <th>Role</th>
+          <th>Status</th>
+          <th class="no-print actions-head">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td class="wrap">
+            <div class="cell-strong">{{ u.display_name }}</div>
+            {% if u.must_change_password %}<div class="cell-sub">Hasn't set their own password yet</div>{% endif %}
+          </td>
+          <td class="mono">{{ u.username }}</td>
+          <td>
+            <form method="post" action="{{ url_for('admin_users_role', user_id=u.id) }}" class="delete-form">
+              <select name="role" onchange="this.form.submit()"
+                      data-tip="Change {{ u.display_name }}'s role. Takes effect on their next request."
+                      {% if u.id == session.get('user_id') and u.role == 'admin' %}disabled{% endif %}>
+                <option value="staff" {% if u.role == 'staff' %}selected{% endif %}>Staff</option>
+                <option value="admin" {% if u.role == 'admin' %}selected{% endif %}>Admin</option>
+              </select>
+            </form>
+          </td>
+          <td>
+            <span class="doc-chip {{ 'cat-computer' if u.is_active else 'cat-other' }}">
+              {{ 'Active' if u.is_active else 'Deactivated' }}
+            </span>
+          </td>
+          <td class="actions no-print">
+            <form method="post" action="{{ url_for('admin_users_reset_password', user_id=u.id) }}" class="delete-form"
+                  onsubmit="return confirm('Reset {{ u.display_name }}\'s password to the starting default? They will need to change it again on their next login.');">
+              <button type="submit" class="icon-action warn"
+                      data-tip="Reset the password back to the starting default ({{ default_password }}) and force a change on next login."
+                      aria-label="Reset password for {{ u.display_name }}">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              </button>
+            </form>
+            {% if u.is_active %}
+            <form method="post" action="{{ url_for('admin_users_deactivate', user_id=u.id) }}" class="delete-form"
+                  onsubmit="return confirm('Deactivate {{ u.display_name }}? They will no longer be able to sign in.');">
+              <button type="submit" class="icon-action danger"
+                      data-tip="Deactivate this account. Their past documents and records are unaffected."
+                      aria-label="Deactivate {{ u.display_name }}"
+                      {% if u.id == session.get('user_id') %}disabled{% endif %}>
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m15 9-6 6M9 9l6 6"/></svg>
+              </button>
+            </form>
+            {% else %}
+            <form method="post" action="{{ url_for('admin_users_reactivate', user_id=u.id) }}" class="delete-form">
+              <button type="submit" class="icon-action"
+                      data-tip="Let {{ u.display_name }} sign in again."
+                      aria-label="Reactivate {{ u.display_name }}">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/></svg>
+              </button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# Below ~760px the table would scroll sideways, so the same rows are
+     rendered as cards instead - same split history.html uses. #}
+  <div class="record-cards">
+    {% for u in users %}
+    <div class="record-card">
+      <div class="record-card-head">
+        <div>
+          <div class="cell-strong">{{ u.display_name }}</div>
+          <div class="cell-sub mono">{{ u.username }}</div>
+        </div>
+        <span class="doc-chip {{ 'cat-computer' if u.is_active else 'cat-other' }}">
+          {{ 'Active' if u.is_active else 'Deactivated' }}
+        </span>
+      </div>
+      <div class="record-card-meta">
+        <form method="post" action="{{ url_for('admin_users_role', user_id=u.id) }}" class="delete-form">
+          <select name="role" onchange="this.form.submit()"
+                  data-tip="Change {{ u.display_name }}'s role. Takes effect on their next request."
+                  {% if u.id == session.get('user_id') and u.role == 'admin' %}disabled{% endif %}>
+            <option value="staff" {% if u.role == 'staff' %}selected{% endif %}>Staff</option>
+            <option value="admin" {% if u.role == 'admin' %}selected{% endif %}>Admin</option>
+          </select>
+        </form>
+        {% if u.must_change_password %}<span>Hasn't set their own password yet</span>{% endif %}
+      </div>
+      <div class="record-card-actions">
+        <form method="post" action="{{ url_for('admin_users_reset_password', user_id=u.id) }}" class="delete-form"
+              onsubmit="return confirm('Reset {{ u.display_name }}\'s password to the starting default? They will need to change it again on their next login.');">
+          <button type="submit" class="tap-action"
+                  data-tip="Reset the password back to the starting default ({{ default_password }}) and force a change on next login.">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </button>
+        </form>
+        {% if u.is_active %}
+        <form method="post" action="{{ url_for('admin_users_deactivate', user_id=u.id) }}" class="delete-form"
+              onsubmit="return confirm('Deactivate {{ u.display_name }}? They will no longer be able to sign in.');">
+          <button type="submit" class="tap-action danger"
+                  data-tip="Deactivate this account. Their past documents and records are unaffected."
+                  {% if u.id == session.get('user_id') %}disabled{% endif %}>
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m15 9-6 6M9 9l6 6"/></svg>
+          </button>
+        </form>
+        {% else %}
+        <form method="post" action="{{ url_for('admin_users_reactivate', user_id=u.id) }}" class="delete-form">
+          <button type="submit" class="tap-action"
+                  data-tip="Let {{ u.display_name }} sign in again.">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/></svg>
+          </button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

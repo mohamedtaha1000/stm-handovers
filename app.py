@@ -36,6 +36,7 @@ from flask import (
     Flask, render_template, request, redirect, url_for,
     session, send_from_directory, flash, abort,
 )
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from templates import (
     EMPLOYEE_KEYS, TEMPLATES, TEMPLATE_GROUPS,
@@ -59,7 +60,7 @@ from employees import (
     known_employees, leaver_lookup, matching_laptops, register_rows,
     typed_identity,
 )
-from models import Handover, Departure, create_all_and_migrate, db
+from models import Handover, Departure, User, create_all_and_migrate, db
 
 app = Flask(__name__)
 
@@ -75,13 +76,6 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 # own recipient by name. Built here rather than in settings.py because
 # it pairs a setting with a message key, which is an app-level idea.
 LEAVER_RECIPIENTS = {"ems": settings.EMS_TO, "resignation": settings.LEAVER_TO}
-
-if settings.TEAM_PASSWORD == "changeme":
-    app.logger.warning(
-        "TEAM_PASSWORD is empty or not set - using the insecure default "
-        "'changeme'. Set a real TEAM_PASSWORD in your .env file (or as an "
-        "environment variable when you deploy)."
-    )
 
 db.init_app(app)
 with app.app_context():
@@ -124,7 +118,14 @@ def mask_id(value):
 
 
 # ----------------------------------------------------------------------
-# Auth (single shared team password - see README for stronger options)
+# Auth - individual accounts, two roles (Admin, Staff)
+#
+# Only an Admin can create an account (from /admin/users), and every
+# account they create - or reset - starts with the same fixed password
+# (settings.DEFAULT_USER_PASSWORD), never one the Admin makes up per
+# person. must_change_password is what turns that shared starting
+# password into something only the account holder knows, before they
+# can do anything else at all.
 # ----------------------------------------------------------------------
 
 def login_required(view):
@@ -132,23 +133,65 @@ def login_required(view):
     def wrapped(*args, **kwargs):
         if not session.get("logged_in"):
             return redirect(url_for("login", next=request.path))
+        # Nothing else works until this is cleared - a forced stop, not
+        # a suggestion, since the account's password is still the one
+        # every other new account also starts with.
+        if (session.get("must_change_password")
+                and request.endpoint not in ("change_password", "logout")):
+            return redirect(url_for("change_password"))
         return view(*args, **kwargs)
     return wrapped
+
+
+def admin_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("logged_in"):
+            return redirect(url_for("login", next=request.path))
+        if (session.get("must_change_password")
+                and request.endpoint not in ("change_password", "logout")):
+            return redirect(url_for("change_password"))
+        if session.get("role") != "admin":
+            abort(403)
+        return view(*args, **kwargs)
+    return wrapped
+
+
+def is_owner_or_admin(owner_user_id):
+    """Whether the signed-in person may act on a record with this owner.
+
+    An Admin may act on anything. Otherwise the record needs a verified
+    owner (see Handover.created_by_user_id's docstring) that matches
+    the signed-in account - a record with no owner at all (made before
+    accounts existed) belongs to nobody until an Admin claims it via the
+    edit form's "Owner account" field, so it can never match a Staff
+    member by accident."""
+    if session.get("role") == "admin":
+        return True
+    return owner_user_id is not None and owner_user_id == session.get("user_id")
 
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
     error = None
     if request.method == "POST":
+        username = request.form.get("username", "").strip().lower()
         password = request.form.get("password", "")
-        display_name = request.form.get("your_name", "").strip()
-        if not display_name:
-            error = "Please enter your name"
-        elif not secrets.compare_digest(password, settings.TEAM_PASSWORD):
-            error = "Wrong password"
+        user = User.query.filter_by(username=username).first()
+        # One message for "no such account", "wrong password", and
+        # "deactivated" alike - which of the three it was is not
+        # something a login form should ever confirm to whoever is
+        # typing.
+        if (not username or not password or user is None
+                or not user.is_active
+                or not check_password_hash(user.password_hash, password)):
+            error = "Wrong username or password"
         else:
             session["logged_in"] = True
-            session["display_name"] = display_name
+            session["user_id"] = user.id
+            session["role"] = user.role
+            session["display_name"] = user.display_name
+            session["must_change_password"] = user.must_change_password
             nxt = request.args.get("next") or url_for("index")
             return redirect(nxt)
     return render_template("login.html", error=error)
@@ -158,6 +201,154 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for("login"))
+
+
+@app.route("/account/change-password", methods=["GET", "POST"])
+@login_required
+def change_password():
+    error = None
+    if request.method == "POST":
+        current = request.form.get("current_password", "")
+        new = request.form.get("new_password", "")
+        confirm = request.form.get("confirm_password", "")
+        user = User.query.get(session["user_id"])
+        if not check_password_hash(user.password_hash, current):
+            error = "Current password is wrong."
+        elif len(new) < 8:
+            error = "New password must be at least 8 characters."
+        elif new != confirm:
+            error = "New password and confirmation don't match."
+        elif check_password_hash(user.password_hash, new):
+            error = "That's your current password - pick a different one."
+        else:
+            user.password_hash = generate_password_hash(new)
+            user.must_change_password = False
+            db.session.commit()
+            session["must_change_password"] = False
+            flash("Password changed.", "success")
+            return redirect(url_for("index"))
+    return render_template(
+        "change_password.html", error=error,
+        forced=session.get("must_change_password", False),
+    )
+
+
+@app.errorhandler(403)
+def forbidden(_error):
+    # A plain redirect, not a 403 response with a Location header - a
+    # browser only follows a Location header on a 3xx status, so keeping
+    # the 403 here would leave the tab stuck on an error page instead of
+    # actually landing back in the app.
+    flash("You don't have permission to do that.", "error")
+    return redirect(url_for("index"))
+
+
+# ----------------------------------------------------------------------
+# Manage users (Admin only)
+#
+# The only way an account is ever created. Every new or reset account
+# gets the same fixed starting password (settings.DEFAULT_USER_PASSWORD)
+# rather than one an Admin makes up per person - see the auth section
+# above for why.
+# ----------------------------------------------------------------------
+
+@app.route("/admin/users")
+@admin_required
+def admin_users():
+    return render_template(
+        "admin_users.html",
+        users=User.query.order_by(User.username).all(),
+        default_password=settings.DEFAULT_USER_PASSWORD,
+    )
+
+
+@app.route("/admin/users", methods=["POST"])
+@admin_required
+def admin_users_create():
+    username = request.form.get("username", "").strip().lower()
+    display_name = request.form.get("display_name", "").strip()
+    role = request.form.get("role", "staff").strip().lower()
+
+    if not username or not display_name:
+        flash("A username and a display name are both needed.", "error")
+    elif role not in ("admin", "staff"):
+        flash("Not a real role.", "error")
+    elif User.query.filter_by(username=username).first() is not None:
+        flash(f'The username "{username}" is already taken.', "error")
+    else:
+        db.session.add(User(
+            username=username, display_name=display_name, role=role,
+            password_hash=generate_password_hash(settings.DEFAULT_USER_PASSWORD),
+        ))
+        db.session.commit()
+        flash(f'{display_name} can now sign in as "{username}" with the '
+              f"starting password {settings.DEFAULT_USER_PASSWORD} - they'll "
+              f"be asked to change it the moment they log in.", "success")
+    return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/users/<int:user_id>/role", methods=["POST"])
+@admin_required
+def admin_users_role(user_id):
+    user = User.query.get_or_404(user_id)
+    role = request.form.get("role", "").strip().lower()
+    if role not in ("admin", "staff"):
+        flash("Not a real role.", "error")
+    elif role != "admin" and user.role == "admin" and _last_active_admin(user):
+        flash(f"{user.display_name} is the only active Admin - promote someone "
+              f"else first.", "error")
+    else:
+        user.role = role
+        db.session.commit()
+        flash(f"{user.display_name} is now {role}.", "success")
+    return redirect(url_for("admin_users"))
+
+
+def _last_active_admin(user):
+    """Whether `user` is the only active Admin left - used to block the
+    one action (demoting or deactivating them) that would leave nobody
+    able to manage accounts at all."""
+    return (User.query.filter_by(role="admin", is_active=True).count() <= 1
+            and user.is_active and user.role == "admin")
+
+
+@app.route("/admin/users/<int:user_id>/deactivate", methods=["POST"])
+@admin_required
+def admin_users_deactivate(user_id):
+    user = User.query.get_or_404(user_id)
+    if user.id == session.get("user_id"):
+        flash("You can't deactivate your own account.", "error")
+    elif _last_active_admin(user):
+        flash(f"{user.display_name} is the only active Admin - there would be "
+              f"nobody left to manage accounts.", "error")
+    else:
+        user.is_active = False
+        db.session.commit()
+        flash(f"{user.display_name} can no longer sign in.", "success")
+    return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/users/<int:user_id>/reactivate", methods=["POST"])
+@admin_required
+def admin_users_reactivate(user_id):
+    user = User.query.get_or_404(user_id)
+    user.is_active = True
+    db.session.commit()
+    flash(f"{user.display_name} can sign in again.", "success")
+    return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/users/<int:user_id>/reset-password", methods=["POST"])
+@admin_required
+def admin_users_reset_password(user_id):
+    user = User.query.get_or_404(user_id)
+    user.password_hash = generate_password_hash(settings.DEFAULT_USER_PASSWORD)
+    user.must_change_password = True
+    db.session.commit()
+    flash(f"{user.display_name}'s password has been reset to "
+          f"{settings.DEFAULT_USER_PASSWORD} - they'll be asked to change it "
+          f"on their next login.", "success")
+    return redirect(url_for("admin_users"))
 
 
 # ----------------------------------------------------------------------
@@ -321,6 +512,7 @@ def save_document(template_id, values, fill_data, date_obj, record=None):
         record = stamp_record(Handover(), template_id, values, fill_data,
                               date_obj, internal_name)
         record.created_by = session.get("display_name", "-")
+        record.created_by_user_id = session.get("user_id")
         db.session.add(record)
 
     db.session.commit()
@@ -328,12 +520,12 @@ def save_document(template_id, values, fill_data, date_obj, record=None):
     return record, None
 
 
-def render_form(template_id, data, record=None, duplicate=None):
+def render_form(template_id, data, record=None, duplicate=None, owners=None):
     spec = TEMPLATES[template_id]
     return render_template(
         "form.html", spec=spec, template_id=template_id,
         data=data, today=date.today().isoformat(), record=record,
-        duplicate=duplicate,
+        duplicate=duplicate, owners=owners,
     )
 
 
@@ -414,10 +606,19 @@ def new_document(template_id):
 @login_required
 def edit_document(record_id):
     record = Handover.query.get_or_404(record_id)
+    if not is_owner_or_admin(record.created_by_user_id):
+        abort(403)
     template_id = record.template_id
     if template_id not in TEMPLATES:
         flash("That document was made from a template this site no longer has.", "error")
         return redirect(url_for("history"))
+
+    # Admin-only: who this record counts as belonging to, editable here
+    # rather than as its own page, since opening this form for an
+    # unowned (pre-accounts) record already requires Admin - claiming it
+    # for the right person is a natural extra step while already here.
+    is_admin = session.get("role") == "admin"
+    owners = User.query.filter_by(is_active=True).order_by(User.display_name).all() if is_admin else None
 
     if request.method == "POST":
         # What this document already says is allowed to stay, so a record
@@ -427,18 +628,23 @@ def edit_document(record_id):
         if errors:
             for message in errors:
                 flash(message, "error")
-            return render_form(template_id, request.form, record=record)
+            return render_form(template_id, request.form, record=record, owners=owners)
 
         record, problem = save_document(template_id, values, fill_data, date_obj,
                                         record=record)
         if problem:
             flash(problem, "error")
-            return render_form(template_id, request.form, record=record)
+            return render_form(template_id, request.form, record=record, owners=owners)
+
+        if is_admin and "owner_user_id" in request.form:
+            raw = request.form.get("owner_user_id", "").strip()
+            record.created_by_user_id = int(raw) if raw else None
+            db.session.commit()
 
         flash(f"Saved. The document for {record.name} has been generated again.", "success")
         return redirect(url_for("done", record_id=record.id))
 
-    return render_form(template_id, form_data_from_record(record), record=record)
+    return render_form(template_id, form_data_from_record(record), record=record, owners=owners)
 
 
 # ----------------------------------------------------------------------
@@ -571,6 +777,8 @@ def download_batch():
     from flask import send_file
 
     records = batch_records(request.args.get("ids", ""))
+    if session.get("role") != "admin":
+        records = [r for r in records if r.created_by_user_id == session.get("user_id")]
     if not records:
         abort(404)
 
@@ -656,6 +864,8 @@ def done(record_id):
 @login_required
 def get_file(record_id):
     record = Handover.query.get_or_404(record_id)
+    if not is_owner_or_admin(record.created_by_user_id):
+        abort(403)
     file_path = settings.GENERATED_DIR / record.filename
     if not file_path.exists():
         abort(404)
@@ -677,6 +887,8 @@ def regenerate_file(record_id):
     on download: the row is found by searching, same as anything else
     here, and the button only appears once the file is confirmed missing."""
     record = Handover.query.get_or_404(record_id)
+    if not is_owner_or_admin(record.created_by_user_id):
+        abort(403)
     problem = rebuild_document(record)
     if problem:
         flash(problem, "error")
@@ -739,10 +951,21 @@ def history():
         except ValueError:
             date_to = ""
 
+    # Staff only ever see what they made - a record with no verified
+    # owner (made before accounts existed) or owned by someone else
+    # simply never appears here for them, same as if it didn't exist.
+    # An Admin sees everything, unfiltered.
+    is_admin = session.get("role") == "admin"
+    if not is_admin:
+        query = query.filter(Handover.created_by_user_id == session.get("user_id"))
+
     total = query.count()
     pages = max(1, (total + HISTORY_PAGE_SIZE - 1) // HISTORY_PAGE_SIZE)
     page = min(page, pages)
     records = query.offset((page - 1) * HISTORY_PAGE_SIZE).limit(HISTORY_PAGE_SIZE).all()
+
+    grand_total = (Handover.query.count() if is_admin else
+                   Handover.query.filter_by(created_by_user_id=session.get("user_id")).count())
 
     return render_template(
         "history.html", records=records, q=q, type_filter=type_filter,
@@ -759,9 +982,9 @@ def history():
         filters=active_filters(q, type_filter, date_from, date_to),
         matching=total,
         # `total` is what the current filters match; the heading wants the
-        # size of the whole log, or it reads as though filtering deleted
-        # everything else.
-        grand_total=Handover.query.count(),
+        # size of what this person can see overall, or it reads as though
+        # filtering deleted everything else.
+        grand_total=grand_total,
     )
 
 
@@ -976,39 +1199,6 @@ def leaver_links(person):
             for d in leaver_drafts(person)}
 
 
-# The environment variable behind each address, so the page can name the
-# one to set rather than just saying an address is missing.
-LEAVER_SETTINGS = {"ems": "HANDOVER_EMS_TO", "resignation": "HANDOVER_LEAVER_TO"}
-
-
-def leaver_addresses():
-    """One line saying who each draft is addressed to, for above the
-    button.
-
-    A missing recipient is not an error - the draft still opens, and
-    Outlook simply asks who it is for - but it is far better known
-    before the press than discovered in a half-written email after it.
-    So the line leads with what will happen and ends with the fix.
-    """
-    named = [(m["label"], settings.addresses(LEAVER_RECIPIENTS.get(m["key"], "")),
-              LEAVER_SETTINGS.get(m["key"], ""))
-             for m in leaver_email.MESSAGES]
-    unset = [(label, var) for label, to, var in named if not to]
-    if not unset:
-        return {"ok": True,
-                "text": " · ".join(f"{label} → {', '.join(to)}"
-                                   for label, to, _ in named)}
-    if len(unset) == len(named):
-        return {"ok": False,
-                "text": "Both drafts will open with an empty To line — set "
-                        + " and ".join(var for _, var in unset)
-                        + " in your .env file, then restart the app."}
-    label, var = unset[0]
-    return {"ok": False,
-            "text": f"The {label} draft will open with an empty To line — "
-                    f"set {var} in your .env file, then restart the app."}
-
-
 def open_drafts_here(drafts):
     """Put these drafts in front of the person. Returns (opened, reason)
     - reason being why not, for the page to show.
@@ -1160,6 +1350,12 @@ def record_departure(typed):
         gone.email = typed.get("email", "")
         gone.left_on = left_on
         gone.recorded_by = session.get("display_name", "-")
+        # Claimed once, kept afterwards - re-marking an already-recorded
+        # departure (correcting a detail through this same flow) must
+        # not silently hand it to whoever happens to press the button
+        # this time.
+        if gone.recorded_by_user_id is None:
+            gone.recorded_by_user_id = session.get("user_id")
     db.session.commit()
 
     problem = refresh_register()
@@ -1195,7 +1391,6 @@ def resignation():
         # page shows one comma-spaced list.
         recipients={key: ", ".join(settings.addresses(raw))
                     for key, raw in LEAVER_RECIPIENTS.items()},
-        addresses=leaver_addresses(),
         links=leaver_links(typed),
         # The same two links with a token wherever a value goes, for the
         # browser to fill in as the boxes are typed.
@@ -1275,6 +1470,11 @@ def edit_departure(departure_id):
     spreadsheet is gone by the next document. This is where it sticks.
     """
     gone = Departure.query.get_or_404(departure_id)
+    if not is_owner_or_admin(gone.recorded_by_user_id):
+        abort(403)
+    is_admin = session.get("role") == "admin"
+    owners = User.query.filter_by(is_active=True).order_by(User.display_name).all() if is_admin else None
+
     if request.method == "POST":
         typed = {f["key"]: request.form.get(f["key"], "").strip()
                  for f in DEPARTURE_FIELDS}
@@ -1297,13 +1497,18 @@ def edit_departure(departure_id):
             for message in errors:
                 flash(message, "error")
             return render_template("departure_edit.html", fields=DEPARTURE_FIELDS,
-                                   typed=typed, gone=gone)
+                                   typed=typed, gone=gone, owners=owners)
 
         for key, value in typed.items():
             setattr(gone, key, value)
         if wanted:
             gone.identity = wanted
         gone.recorded_by = session.get("display_name", "-")
+        if gone.recorded_by_user_id is None:
+            gone.recorded_by_user_id = session.get("user_id")
+        if is_admin and "owner_user_id" in request.form:
+            raw = request.form.get("owner_user_id", "").strip()
+            gone.recorded_by_user_id = int(raw) if raw else None
         db.session.commit()
         problem = refresh_register()
         if problem:
@@ -1315,11 +1520,11 @@ def edit_departure(departure_id):
     return render_template("departure_edit.html", fields=DEPARTURE_FIELDS,
                            typed={f["key"]: getattr(gone, f["key"], "") or ""
                                   for f in DEPARTURE_FIELDS},
-                           gone=gone)
+                           gone=gone, owners=owners)
 
 
 @app.route("/resignation/<int:departure_id>/remove", methods=["POST"])
-@login_required
+@admin_required
 def remove_departure(departure_id):
     """Take somebody off the resignation sheet - because they were
     recorded by mistake, or twice. Anything they were holding goes back
@@ -1337,7 +1542,7 @@ def remove_departure(departure_id):
 
 
 @app.route("/delete/<int:record_id>", methods=["POST"])
-@login_required
+@admin_required
 def delete_history(record_id):
     record = Handover.query.get_or_404(record_id)
     file_path = settings.GENERATED_DIR / record.filename

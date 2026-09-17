@@ -637,19 +637,6 @@ button.icon-action:hover { background: var(--panel); }
 .do-it { margin-bottom: 16px; }
 .do-it .button { padding: 14px 18px; font-size: 14.5px; border-radius: 12px; }
 .do-it-note { margin: 10px 0 0; font-size: 12.5px; color: var(--muted); min-height: 1.1em; }
-
-/* Where the two drafts are addressed, said before the press rather than
-   discovered in Outlook after it. */
-.do-it-where {
-  margin: 10px 0 0; font-size: 12.5px; color: var(--muted);
-  display: flex; align-items: flex-start; gap: 7px;
-}
-.do-it-where::before {
-  content: ""; flex: 0 0 auto; width: 6px; height: 6px; margin-top: 6px;
-  border-radius: 50%; background: var(--ghost);
-}
-.do-it-where.unset { color: var(--error-text); }
-.do-it-where.unset::before { background: currentColor; }
 .do-it-note.good { color: var(--ok-text); }
 .do-it-note.bad { color: var(--error-text); }
 .or-line {
