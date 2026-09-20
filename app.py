@@ -34,6 +34,7 @@ See README.md for environment variables and deployment notes.
 
 import os
 import secrets
+import sys
 from typing import Any
 
 from flask import Flask, Response, flash, redirect, url_for
@@ -42,6 +43,17 @@ import settings
 from models import create_all_and_migrate, db
 
 app = Flask(__name__)
+
+# Run as `python app.py`, this file executes as "__main__", not as a
+# module named "app" - so routes/*.py's own `from app import app` would
+# otherwise find no "app" in sys.modules and re-import this file from
+# scratch under that name, creating a SECOND Flask instance. Every route
+# would end up registered on that second, never-run instance while the
+# real server - the one .run() is called on below - stayed empty and
+# 404'd on every URL. Registering this module under "app" up front means
+# that later `from app import app` finds it already cached, however this
+# file was started.
+sys.modules.setdefault("app", sys.modules[__name__])
 
 # Everything configurable lives in settings.py. Read through the module
 # (settings.X) rather than importing the names, so a test that points the

@@ -9,6 +9,44 @@ Newest first.
 
 ---
 
+### 2026-09-20 — Fixed: `python app.py` served nothing but 404s
+
+The routes/ split (below) relies on each `routes/*.py` module doing
+`from app import app` to register its routes onto the one shared Flask
+instance app.py creates. That only works if Python already has a module
+named "app" loaded by the time those imports run - true when app.py is
+imported normally (`from app import app` in a script, `gunicorn
+app:app`, this project's own test suite), but **not** true when it's
+run directly with `python app.py`: Python then loads the file as
+"__main__", not as "app". `from app import app` found no "app" in
+`sys.modules` and silently re-imported app.py from scratch under that
+name - a second, separate Flask instance. Every route ended up
+registered on that second instance, which nothing ever served; the
+first instance - the one `.run()` was actually called on - had no
+routes at all and 404'd on every URL, including `/`. No exception, no
+warning: the dev server printed its normal startup banner and looked
+fine.
+
+This was caught live, by actually running `python app.py` and hitting
+it - exactly the one way this app is documented to be started, and the
+one thing this session's own testing of the routes split had never
+literally done (verification up to that point was all `from app import
+app` in scripts and through the pytest client, which don't reproduce
+this).
+
+**Fix:** `app.py` now does `sys.modules.setdefault("app", sys.modules[__name__])`
+right after creating `app = Flask(__name__)` - so whichever name this
+module is running under, "app" resolves to it from then on, and
+`from app import app` in the route modules can never trigger a second
+import.
+
+**Regression test:** `tests/test_run_as_script.py` spawns a real
+`python app.py` subprocess and requests `/`, `/login`, `/history` from
+it - the one test in this suite that runs the app the way `python
+app.py` actually does rather than importing `app` as a module. Verified
+it fails (times out finding even `/login`) against the code without the
+fix, and passes with it.
+
 ### 2026-09-17 — Added type hints; left Flask view functions loosely typed
 
 Added PEP 484 type hints across the domain modules (`employees.py`,
