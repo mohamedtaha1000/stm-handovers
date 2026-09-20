@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 employees.py
 ============
@@ -18,9 +17,11 @@ No Flask. Given the rows, every function here is a pure question about
 them.
 """
 
+from typing import Any
+
 import asset_register
 from models import Departure, Handover
-from templates import EMPLOYEE_KEYS, TEMPLATES
+from templates import EMPLOYEE_KEYS
 
 # The fields worth showing in the history table's equipment column, in
 # the order we would rather have them: what the thing is, then which one.
@@ -40,7 +41,7 @@ COMPUTER_SERIAL_KEYS = {
 
 
 
-def employee_identity(record):
+def employee_identity(record: Handover) -> str:
     """What makes two records the same person. The employee code is the
     real identifier; the national ID backs it up for older records that
     predate the code field, and the name is the last resort."""
@@ -50,7 +51,7 @@ def employee_identity(record):
     return code or govid or (record.name or "").strip().lower()
 
 
-def typed_identity(name, code=""):
+def typed_identity(name: str, code: str = "") -> str:
     """How to file a departure for someone with no documents on record.
 
     The same chain employee_identity uses, minus the national ID, which
@@ -61,7 +62,18 @@ def typed_identity(name, code=""):
     return code.strip().lower() or (name or "").strip().lower()
 
 
-def known_employees(limit=400):
+def matches_query(person: dict[str, Any], query: str) -> bool:
+    """Whether a lookup entry answers to what was typed.
+
+    Both names are searched. Someone whose documents are in Arabic is
+    still found by typing the English spelling - which is the one on
+    most keyboards, and the one people remember from the mailbox.
+    """
+    return any(query in (person.get(key) or "").lower()
+               for key in ("name", "name_en", "code", "department"))
+
+
+def known_employees(limit: int = 400) -> list[dict[str, Any]]:
     """One entry per person, taken from their most recent document.
 
     Most recent matters: someone who changed department should come back
@@ -70,13 +82,13 @@ def known_employees(limit=400):
     records = (Handover.query
                .order_by(Handover.created_at.desc(), Handover.id.desc())
                .limit(limit).all())
-    people = {}
+    people: dict[str, dict[str, Any]] = {}
     for record in records:
         key = employee_identity(record)
         if not key or key in people:
             continue
         fields = record.fields
-        entry = {k: (fields.get(k) or "") for k in EMPLOYEE_KEYS}
+        entry: dict[str, Any] = {k: (fields.get(k) or "") for k in EMPLOYEE_KEYS}
         entry["name"] = entry["name"] or record.name or ""
         entry["department"] = entry["department"] or record.department or ""
         entry["role"] = entry["role"] or record.role or ""
@@ -86,7 +98,9 @@ def known_employees(limit=400):
     return list(people.values())
 
 
-def find_duplicate(template_id, values, exclude_id=None):
+def find_duplicate(
+    template_id: str, values: dict[str, Any], exclude_id: str | None = None
+) -> Handover | None:
     """An earlier document of this same type for this same person, if
     there is one. Two handovers of the same thing to the same person is
     usually a mistake - or a sign the replacement template was the one
@@ -109,12 +123,12 @@ def find_duplicate(template_id, values, exclude_id=None):
     return None
 
 
-def equipment_summary(record):
+def equipment_summary(record: Handover) -> dict[str, str]:
     """A one-line "what was handed over" for a history row: the model (or
     brand, or capacity) and the serial, drawn from whichever fields that
     document type happens to collect."""
     fields = record.fields
-    def first(keys):
+    def first(keys: tuple[str, ...]) -> str:
         for key in keys:
             value = (fields.get(key) or "").strip()
             if value:
@@ -127,7 +141,7 @@ def equipment_summary(record):
     return {"what": what, "serial": first(SERIAL_KEYS)}
 
 
-def leaver_lookup(limit=400):
+def leaver_lookup(limit: int = 400) -> list[dict[str, Any]]:
     """Everyone with a document on file, shaped like the leaver form.
 
     Feeds the "reuse someone already on file" suggestions on that page.
@@ -142,13 +156,13 @@ def leaver_lookup(limit=400):
     records = (Handover.query
                .order_by(Handover.created_at.desc(), Handover.id.desc())
                .limit(limit).all())
-    grouped = {}
+    grouped: dict[str, list[Handover]] = {}
     for record in records:
         key = employee_identity(record)
         if key:
             grouped.setdefault(key, []).append(record)
 
-    people = []
+    people: list[dict[str, Any]] = []
     for mine in grouped.values():
         newest = mine[0]
         fields = newest.fields
@@ -176,13 +190,13 @@ def leaver_lookup(limit=400):
     return people
 
 
-def departures_by_identity():
+def departures_by_identity() -> dict[str, Departure]:
     """Everyone marked as having left, keyed the way the rest of the app
     recognises a person."""
     return {d.identity: d for d in Departure.query.all()}
 
 
-def register_rows():
+def register_rows() -> list[dict[str, Any]]:
     """Every laptop assignment the register knows about, built from the
     documents and the people who have left. Lives here rather than in
     app.py because it is the same question matching_laptops asks."""
@@ -191,7 +205,7 @@ def register_rows():
                                      departures_by_identity())
 
 
-def matching_laptops(name="", serial="", code=""):
+def matching_laptops(name: str = "", serial: str = "", code: str = "") -> list[dict[str, Any]]:
     """The laptop rows the register holds for whoever is typed into the
     leaver page.
 
@@ -205,7 +219,7 @@ def matching_laptops(name="", serial="", code=""):
     if not (name or serial or code):
         return []
     rows = register_rows()
-    matched = []
+    matched: list[dict[str, Any]] = []
     for row in rows:
         if code and row["code"].strip().lower() == code:
             matched.append(row)

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 models.py
 =========
@@ -17,9 +16,11 @@ import json
 import logging
 import uuid
 from datetime import datetime
+from typing import Any
 
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import inspect, text
+from sqlalchemy.engine import Connection
 from werkzeug.security import generate_password_hash
 
 import settings
@@ -30,7 +31,7 @@ log = logging.getLogger(__name__)
 db = SQLAlchemy()
 
 
-def new_uuid():
+def new_uuid() -> str:
     """A record's id, opaque and non-sequential - so seeing one (in a
     URL, in a shared link) never tells you anything about how many
     others exist or lets you step through them one by one."""
@@ -68,14 +69,14 @@ class Handover(db.Model):
     updated_at = db.Column(db.DateTime)
 
     @property
-    def fields(self):
+    def fields(self) -> dict[str, Any]:
         try:
             return json.loads(self.fields_json) if self.fields_json else {}
         except (TypeError, ValueError):
             return {}
 
     @property
-    def template_label(self):
+    def template_label(self) -> str:
         spec = TEMPLATES.get(self.template_id)
         return spec["label"] if spec else self.template_id
 
@@ -135,11 +136,11 @@ class User(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     @property
-    def is_admin(self):
+    def is_admin(self) -> bool:
         return self.role == "admin"
 
 
-def _needs_uuid_migration():
+def _needs_uuid_migration() -> bool:
     """Whether user/handover/departure still have their original
     auto-incrementing integer id column, from before ids were switched
     to UUIDs."""
@@ -154,7 +155,7 @@ def _needs_uuid_migration():
     return False
 
 
-def _migrate_integer_ids_to_uuid():
+def _migrate_integer_ids_to_uuid() -> None:
     """One-time rebuild of user/handover/departure onto UUID primary
     keys, in place of the auto-incrementing integers they started with.
 
@@ -185,7 +186,7 @@ def _migrate_integer_ids_to_uuid():
     tables = inspect(db.engine).get_table_names()
     present = [t for t in ("user", "handover", "departure") if t in tables]
 
-    rows_by_table = {}
+    rows_by_table: dict[str, list[dict[str, Any]]] = {}
     with db.engine.begin() as conn:
         for table in present:
             rows_by_table[table] = [
@@ -215,7 +216,7 @@ def _migrate_integer_ids_to_uuid():
     new_inspector = inspect(db.engine)
     valid_cols = {t: {c["name"] for c in new_inspector.get_columns(t)} for t in present}
 
-    def insert(conn, table, data):
+    def insert(conn: Connection, table: str, data: dict[str, Any]) -> None:
         data = {k: v for k, v in data.items() if k in valid_cols[table]}
         cols = ", ".join(data.keys())
         placeholders = ", ".join(f":{k}" for k in data.keys())
@@ -247,7 +248,7 @@ def _migrate_integer_ids_to_uuid():
                 ", ".join(f"{t}={len(rows_by_table.get(t, []))} rows" for t in present))
 
 
-def create_all_and_migrate():
+def create_all_and_migrate() -> None:
     """Create the tables, rebuild ids onto UUIDs if this database still
     has the old integer ones, then add any column an older database is
     missing. Called once from app.py inside an application context.
@@ -298,7 +299,7 @@ def create_all_and_migrate():
     ensure_bootstrap_admin()
 
 
-def ensure_bootstrap_admin():
+def ensure_bootstrap_admin() -> None:
     """Create the very first Admin account from ADMIN_USERNAME/
     ADMIN_PASSWORD, but only if no account exists yet.
 

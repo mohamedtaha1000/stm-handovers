@@ -148,6 +148,14 @@ from `ADMIN_USERNAME`/`ADMIN_PASSWORD` in `.env` - a real password
 someone chose during setup, not the shared default, so it isn't forced
 through the change-password screen.
 
+**Anyone can rename themselves; only an Admin can rename anyone else.**
+"My profile" (self-service) and the username/display name boxes on
+"Manage users" (Admin, for any account) are the same two fields through
+two different routes - both enforce the same rule, that a username has
+to stay unique across every account. Changing your own takes effect
+immediately (the session is updated on the spot), no need to log back
+in to see your new name in the nav.
+
 ---
 
 ## The modules
@@ -169,7 +177,7 @@ else is plain Python that can be read, tested and understood on its own.
 | `notify_email.py` | 291 | The handover notification |
 | `leaver_email.py` | 223 | The two leaver messages |
 | `outlook_com.py` | 133 | Talking to Outlook. Knows nothing else |
-| `app.py` | 1606 | Routes, auth/roles, and the web layer only |
+| `app.py` | 1580 | Routes, auth/roles, and the web layer only |
 
 `doc_templates/` holds the ten Arabic `.docx` templates. The app fills
 `FILL_*` placeholders in them; it never writes a document from scratch.

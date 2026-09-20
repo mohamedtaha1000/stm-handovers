@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}My profile{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>My profile</h1>
+  <p class="lead">Your username and the name every document and "who did
+    this" field calls you.</p>
+</div>
+
+<div class="card">
+  {% if error %}
+  <div class="flash error">
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+    <p>{{ error }}</p>
+  </div>
+  {% endif %}
+  <form method="post">
+    <div class="grid">
+      <div class="field">
+        <label for="username">Username</label>
+        <input id="username" name="username" required autocomplete="username"
+               value="{{ request.form.get('username', user.username) }}">
+      </div>
+      <div class="field">
+        <label for="display_name">Display name</label>
+        <input id="display_name" name="display_name" required autocomplete="off"
+               value="{{ request.form.get('display_name', user.display_name) }}">
+      </div>
+    </div>
+    <div class="form-actions">
+      <a class="button-secondary" href="{{ url_for('index') }}"
+         data-tip="Go back without saving.">Cancel</a>
+      <button type="submit"
+              data-tip="Your username is what you sign in with; your display name is what shows up everywhere else.">
+        Save profile
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

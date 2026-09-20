@@ -504,6 +504,17 @@ button:disabled:hover { background: var(--accent); }
 .mono { font-variant-numeric: tabular-nums; }
 .actions { text-align: end; white-space: nowrap; }
 
+/* Reads as plain text until you actually mean to change it - a border
+   and background only on hover/focus, not sitting there looking like a
+   form the rest of the time. */
+.rename-input {
+  width: 100%; border: 1px solid transparent; background: none;
+  padding: 3px 6px; margin: -3px -6px; border-radius: 6px;
+  font: inherit; color: inherit; font-weight: inherit;
+}
+.rename-input:hover { background: var(--panel); }
+.rename-input:focus { background: var(--field-bg); border-color: var(--border-field); outline: none; }
+
 .doc-chip {
   display: inline-flex; align-items: center; border-radius: 999px;
   padding: 4px 10px; font-size: 12px; font-weight: 600;

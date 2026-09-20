@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 templates.py
 ============
@@ -13,6 +12,7 @@ plus, if it is a new SHAPE, a function in builders.py.
 """
 
 from pathlib import Path
+from typing import Any
 
 BASE_DIR = Path(__file__).resolve().parent
 DOC_TEMPLATES_DIR = BASE_DIR / "doc_templates"
@@ -394,7 +394,7 @@ for _spec in TEMPLATES.values():
 TEMPLATE_GROUPS = ("Computers", "Peripherals", "Storage & network")
 
 
-def all_fields(template_id):
+def all_fields(template_id: str) -> list[dict[str, Any]]:
     """Every field key this template's form should collect (employee +
     device + device_2 if any), in order."""
     spec = TEMPLATES[template_id]
@@ -404,9 +404,9 @@ def all_fields(template_id):
     return fields
 
 
-def required_field_keys(template_id):
+def required_field_keys(template_id: str) -> list[str]:
     return [f["key"] for f in all_fields(template_id) if f.get("required")]
 
 
-def template_path(template_id):
+def template_path(template_id: str) -> Path:
     return DOC_TEMPLATES_DIR / TEMPLATES[template_id]["doc_file"]

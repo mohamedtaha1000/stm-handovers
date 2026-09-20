@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 ooxml.py
 ========
@@ -22,13 +21,11 @@ the "/" and the Arabic labels gluing themselves to the values.
 
 import copy
 import re
-from pathlib import Path
 
-import docx
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.shared import Emu
-from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+from docx.shared import Emu
 
 WEEKDAYS_AR = ["الاثنين", "الثلاثاء", "الاربعاء", "الخميس", "الجمعة", "السبت", "الاحد"]
 MONTHS_AR = [
@@ -305,10 +302,14 @@ def fix_table_width(table, target_width_twips):
     factor = target_width_twips / sum(old_widths)
     new_widths = [round(w * factor) for w in old_widths]
 
-    for col, w in zip(cols, new_widths):
+    for col, w in zip(cols, new_widths, strict=True):
         col.set(qn("w:w"), str(w))
     for row in table.rows:
-        for cell, w in zip(row.cells, new_widths):
+        # Not strict: a row can hold fewer <w:tc> than there are grid
+        # columns when Word has merged cells across it, and that row's
+        # remaining cells still need their widths set from the columns
+        # they do occupy.
+        for cell, w in zip(row.cells, new_widths, strict=False):
             tcPr = cell._tc.find(qn("w:tcPr"))
             if tcPr is None:
                 continue
@@ -551,8 +552,7 @@ def iter_paragraphs(doc):
             for p in part.paragraphs:
                 yield p
             for table in part.tables:
-                for pp in walk_table(table):
-                    yield pp
+                yield from walk_table(table)
 
 
 def replace_in_paragraph(paragraph, token, value):
@@ -587,7 +587,7 @@ def replace_in_paragraph(paragraph, token, value):
 
         pos = 0
         target = None
-        for run, text in zip(runs, texts):
+        for run, text in zip(runs, texts, strict=True):
             r_start, r_end = pos, pos + len(text)
             pos = r_end
             if r_end <= start or r_start >= end:
@@ -758,7 +758,7 @@ def apply_format(run, size_val, font_names):
         if rf is None:
             rf = OxmlElement("w:rFonts")
             rPr.insert(0, rf)
-        for attr, val in zip(("w:ascii", "w:hAnsi", "w:cs"), font_names):
+        for attr, val in zip(("w:ascii", "w:hAnsi", "w:cs"), font_names, strict=True):
             if val:
                 rf.set(qn(attr), val)
     for tag in ("w:b", "w:bCs"):
@@ -1122,7 +1122,9 @@ def drop_empty_columns(table):
     # The per-cell widths have to agree with the new grid.
     widths = [int(c.get(qn("w:w")) or 0) for c in grid.findall(qn("w:gridCol"))]
     for row in table.rows:
-        for cell, width in zip(row.cells, widths):
+        # Not strict, same reason as resize_table_columns above: a row
+        # with merged cells has fewer of them than there are columns.
+        for cell, width in zip(row.cells, widths, strict=False):
             tcPr = cell._tc.find(qn("w:tcPr"))
             if tcPr is None:
                 continue

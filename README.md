@@ -21,6 +21,7 @@ This README covers setup and deployment. Related documentation:
 - [Running locally](#running-locally)
 - [Configuration](#configuration)
 - [Project structure](#project-structure)
+- [Development](#development)
 - [Features](#features)
 - [Managing accounts](#managing-accounts)
 - [Deployment](#deployment)
@@ -148,7 +149,18 @@ email_html.py          How every email's tables look (HTML)
 notify_email.py        The "this has been handed over" message
 leaver_email.py        The two messages sent when someone leaves
 outlook_com.py         Opening drafts in the local Outlook
-app.py                 Flask application: routes and the web layer only
+app.py                 Builds the Flask app and the database; owns
+                       nothing route-specific itself
+routes/                The web layer, one file per area:
+  auth.py                Sign in/out, change password, edit your own
+                          profile - also login_required/admin_required
+  documents.py            Home page, create/edit/batch a document,
+                          History, the register, notification email
+  resignation.py          The leaver page, recording a departure,
+                          editing/removing one already on file
+  admin.py                Manage users (Admin only)
+  common.py               The few helpers more than one of the above
+                          needs (rebuilding the register, Outlook drafts)
 
 doc_templates/         One placeholder Word template per document type:
                          Laptop Handover Template.docx
@@ -165,11 +177,53 @@ doc_templates/         One placeholder Word template per document type:
 templates/             HTML pages (login, picker, form, done, history)
 static/style.css       Stylesheet
 static/stm-logo.png    Logo, used in the header and favicon
+tests/                 Automated tests (pytest) - see Development below
 requirements.txt       Python dependencies
+requirements-dev.txt   Additional dependencies for development only
+                       (pytest, ruff) - not part of the deployed app
+pyproject.toml         Configuration for pytest and ruff
+.github/workflows/     CI: runs the tests and the linter on every push
 Procfile               Start command for hosting platforms (gunicorn)
 .env                   Local secrets (not committed to version control)
 .env.example           Blank reference copy of .env, safe to commit
 ```
+
+## Development
+
+Beyond running the app itself, this project uses `pytest` for automated
+tests and `ruff` for linting/formatting checks. Neither is required to
+run the app — they matter only if you're changing the code.
+
+Install the extra tooling (this also installs everything in
+`requirements.txt`):
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+Run the tests:
+
+```bash
+pytest
+```
+
+`tests/conftest.py` points the app at a temporary database, a temporary
+laptop register, and `HANDOVER_OUTLOOK=never` (so a test never reaches a
+real Outlook) — your real `instance/handovers.db`, `generated/`, and
+`laptop_register.xlsx` are never touched by running the suite.
+
+Run the linter:
+
+```bash
+ruff check .
+```
+
+`ruff format` (the same tool's auto-formatter) is intentionally **not**
+enforced — see [DECISIONS.md](DECISIONS.md) for why.
+
+A GitHub Actions workflow (`.github/workflows/ci.yml`) runs both of the
+above on every push and pull request against `master`, on the oldest
+Python version this app supports and the one it's developed on.
 
 ## Features
 
@@ -219,15 +273,19 @@ register.
 
 ## Managing accounts
 
-Admin only, from "Manage users" in the nav:
+**Every signed-in person**, from "My profile" in the nav, can change
+their own username and display name (both must stay unique across the
+whole app). **Change password** works the same way, right beside it.
+
+**Admin only**, from "Manage users" in the nav:
 
 - **Add a user** — username, display name, role. There's no password
   field: every new account starts with the same fixed password
   (`DEFAULT_USER_PASSWORD`), and the account holder is forced to set
   their own the moment they log in, before they can do anything else.
-- **Change role**, **deactivate/reactivate**, **reset password** (back
-  to the same fixed starting password, forcing another change on next
-  login).
+- **Rename** (username and display name), **change role**,
+  **deactivate/reactivate**, **reset password** (back to the same fixed
+  starting password, forcing another change on next login) — for anyone.
 - An Admin can't deactivate or demote themselves, and can't leave the
   team with zero active Admins.
 

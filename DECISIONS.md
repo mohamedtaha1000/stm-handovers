@@ -9,6 +9,191 @@ Newest first.
 
 ---
 
+### 2026-09-17 — Added type hints; left Flask view functions loosely typed
+
+Added PEP 484 type hints across the domain modules (`employees.py`,
+`documents.py`, `asset_register.py`, `builders.py`, `templates.py`,
+`leaver_email.py`, `email_html.py`, `notify_email.py`, `outlook_com.py`,
+`settings.py`) and the `routes/*.py` modules, using built-in generics
+(`list[str]`, `dict[str, Any]`, `str | None` - this project targets
+Python 3.10+, so no `typing.List`/`Optional` needed).
+
+**Deliberately left unannotated:**
+- Flask view functions' own return types (e.g. `def login():`, `def
+  history():`) - a view can return a rendered template (`str`), a
+  redirect, a dict (JSON), or a `(dict, status_code)` tuple depending on
+  the branch, and forcing a `flask.Response | str | ...` union onto
+  every one of them would be noise, not information. Their URL path
+  parameters ARE typed (`record_id: str`, `user_id: str`, ...) since
+  those are always the same one thing: the UUID string from the route.
+- `models.py`'s `db.Column(...)` class attributes - typing those
+  properly needs SQLAlchemy 2.0's `Mapped[]`/`mapped_column()` style,
+  which is a separate, bigger migration this pass wasn't trying to do.
+- `ooxml.py` and `fill_logic.py` entirely - low-level OOXML/python-docx
+  manipulation where a type would mostly be `Element`/`Any` noise, and
+  `fill_logic.py` is already excluded from linting for the same reason.
+
+**Verified**: `python -m py_compile` on every changed file, `ruff check
+.` clean across the whole repo, and the full `pytest` suite (see below)
+still green - type hints are additive by construction, but this
+confirms nothing besides annotations actually changed.
+
+### 2026-09-17 — CI runs on Ubuntu, not Windows, and never touches Outlook
+
+`.github/workflows/ci.yml` runs `ruff check .` and `pytest` on every
+push/PR against `master`, on `ubuntu-latest` rather than `windows-latest`
+- even though this app is deployed on Windows and its one Windows-only
+feature (`outlook_com.py`, opening drafts directly in a local Outlook via
+`pywin32`/COM) can only really run there. Two reasons this is still the
+right call for CI specifically:
+
+- `outlook_com.py` already guards its own `import win32com.client`
+  behind a `sys.platform != "win32"` check and does it lazily, inside
+  the one function that needs it - so the module imports cleanly
+  anywhere, and nothing in the test suite (which sets
+  `HANDOVER_OUTLOOK=never`, see the test-suite entry below) ever reaches
+  that code path regardless of OS.
+- Everything CI actually exercises - Flask, SQLAlchemy/sqlite,
+  python-docx document generation - is genuinely cross-platform, so
+  `ubuntu-latest` runs it correctly and considerably faster/cheaper than
+  a Windows runner would.
+
+The trade-off, accepted deliberately: CI gives no coverage at all for
+the Outlook-COM code path itself. That was already untested by anything
+automatable (it drives a real desktop Outlook installation), so this
+isn't a regression - just naming the gap rather than pretending
+`windows-latest` would have closed it.
+
+While wiring this up, `pip install -r requirements-dev.txt` was found to
+fail outright on this dev machine: `requirements.txt` pinned
+`pywin32==306`, which has no wheel for Python 3.13 (this machine's
+version) - only 307 and up do. Fixed by bumping the pin to `312`,
+matching the version already installed and working in this environment.
+Not a judgement call, just recorded here since it was a real, silent
+blocker to a fresh `pip install` that this session's CI dry-run is what
+actually surfaced it.
+
+### 2026-09-17 — First automated test suite (pytest)
+
+Added `tests/` covering the things this app cannot afford to get wrong
+silently: login/logout, the forced first-password-change flow, document
+create/edit/delete, the resignation flow, admin user management, and the
+Staff/Admin permission boundary from the RBAC work above. 37 tests, all
+against real logic (real python-docx generation against the real
+`doc_templates/*.docx` files, a real temporary sqlite database) rather
+than mocks - consistent with how this project was already being verified
+by hand throughout this session.
+
+**Fixture strategy, and why it looks the way it does:** this app has no
+factory pattern - `settings.py` reads every environment variable at
+IMPORT time, so `tests/conftest.py` sets `DATABASE_URL`,
+`HANDOVER_REGISTER_PATH`, `SECRET_KEY`, `ADMIN_USERNAME`/`ADMIN_PASSWORD`
+etc. as the very first thing it does, at module level, before `app` or
+`models` gets imported by anything. `HANDOVER_OUTLOOK=never` is set for
+the same reason: without it, a resignation test would reach
+`outlook_com.open_drafts()`, which talks to a real Outlook via COM - the
+whole test suite would either hang or fail on a machine (or a Linux CI
+runner) without Outlook installed. `settings.GENERATED_DIR` is
+reassigned after import (there's no env var for it, only for the
+register) per settings.py's own documented pattern, so generated .docx
+files land in a temp folder instead of the real `generated/`.
+
+**One behavioural surprise the tests caught immediately:** `abort(403)`
+in this app never reaches the browser as an actual 403 - `app.py`'s own
+`@app.errorhandler(403)` turns it into a 302 redirect to `/` with a
+flash message (deliberately, so a browser lands somewhere instead of
+stalling on an error page). Every permission-boundary test asserts
+against that real redirect+flash contract (via a shared
+`assert_forbidden()` helper) rather than a bare status code, which is
+what an untested assumption would have gotten wrong.
+
+**Database reset strategy:** `db.drop_all()` / `db.create_all()` before
+every single test, rather than wrapping each test in a rolled-back
+transaction - simpler to reason about, and fast enough on a temporary
+sqlite file that the extra cost never mattered in practice (the whole
+suite runs in well under a minute).
+
+### 2026-09-17 — Adopted ruff for linting; skipped blanket auto-formatting
+
+Added `ruff` (via `requirements-dev.txt` + `pyproject.toml`) as the
+project's linter, on the standard rule set plus import-sorting,
+modernisation, and bugbear (`select = ["E", "F", "I", "UP", "B"]`), with
+`E501` (line-too-long) ignored so the codebase's prose-style comments and
+docstrings can keep running past a strict wrap column on purpose.
+
+`ruff check .` found 37 issues. The 29 safe ones (stale
+`# -*- coding: utf-8 -*-` declarations, unsorted imports, a couple of
+genuinely unused imports) were auto-fixed. The remaining 8 needed real
+judgement, not a blind fix:
+
+- **`B905` (`zip()` without `strict=`), 6 occurrences** (`ooxml.py` x5,
+  `asset_register.py` x1): each was read individually rather than
+  patched mechanically. Where both sides of a `zip()` are built from the
+  same source and are always the same length (e.g. `zip(runs, texts)`
+  where `texts` is derived from `runs` on the line above), `strict=True`
+  was added - it now fails loudly if that invariant is ever broken.
+  Where the lengths are *expected* to differ - `zip(row.cells, widths)`
+  when a Word table has merged cells, and the classic
+  `zip(mine, mine[1:])` pairwise-consecutive idiom in
+  `asset_register.py` - `strict=False` was set explicitly instead, with
+  a comment explaining why, so the choice reads as deliberate rather
+  than an oversight the linter will keep flagging.
+- **`B007`** (unused loop variable in `routes/documents.py`): the loop
+  only used the dict's values, so it was rewritten as
+  `for problems in errors.values()` rather than renaming the unused key
+  to `_template_id`.
+- **`UP028`** (`ooxml.py`): a `for pp in walk_table(table): yield pp`
+  loop collapsed to `yield from walk_table(table)` - behaviourally
+  identical, one line instead of two.
+
+**`ruff format` (the auto-formatter half of the same tool) was
+deliberately NOT run project-wide.** `ruff format --diff .` produces
+~2,700 lines of changes, and sampling them (`templates.py`) showed it
+collapsing hand-aligned multi-line dicts and wrapped string
+concatenations - arranged that way on purpose, for readability - into a
+denser, harder-to-read shape, plus wholesale quote-style churn. That
+tradeoff (a large diff, disconnected from any actual bug, that makes
+some deliberately-formatted code worse to read) isn't worth it just to
+have "a formatter was run." Linting for real mistakes stays enforced;
+whole-file reformatting was left off.
+
+### 2026-09-17 — Routes split into `routes/` by feature, not Blueprints
+
+`app.py` had grown to 1,580 lines holding all ~40 routes - auth,
+documents, resignation, and admin all interleaved. Options considered:
+leave it; split by technical layer; split by feature into Flask
+Blueprints (the framework's own native answer to this).
+
+**Decided:** split into `routes/auth.py`, `routes/documents.py`,
+`routes/resignation.py`, `routes/admin.py` (plus `routes/common.py` for
+the couple of things more than one of them needs: rebuilding the
+register, opening Outlook drafts) - but **not** as Blueprints.
+
+**Why not Blueprints, despite being the "idiomatic" choice:** Flask
+unconditionally namespaces every Blueprint route as
+`blueprintname.viewname` - there is no way to opt out, even by passing
+an explicit `endpoint=`. Adopting them would have meant updating every
+`url_for()` call across every template (~15 files) and every
+`request.endpoint` comparison, for a change that was supposed to be
+purely organisational. This was discovered by inspecting the actual
+registered URL map after a first attempt with Blueprints, not assumed -
+worth remembering if the instinct to reach for Blueprints comes up
+again later.
+
+**What was used instead:** each `routes/*.py` module does `from app
+import app` and registers routes directly with the ordinary
+`@app.route(...)`, exactly as `app.py` did before. This works because
+`app.py` creates `app` *before* importing the route modules - by the
+time each one runs `from app import app`, the object already exists in
+the partially-initialised `app` module, so the "circular" import
+resolves cleanly. Net effect, confirmed by diffing the before/after URL
+maps line for line: identical routes, identical endpoint names, zero
+template changes.
+
+**Verified** against a full copy of production data: every route across
+all four modules, and the complete write-paths for creating a document,
+recording a resignation, and creating an admin account.
+
 ### 2026-09-17 — Every record id is a UUID, not a sequential integer
 
 `Handover`, `Departure`, and `User` used auto-incrementing integer

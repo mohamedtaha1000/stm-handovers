@@ -1,0 +1,22 @@
+[tool.ruff]
+target-version = "py310"
+line-length = 99
+extend-exclude = ["fill_logic.py"]
+
+[tool.ruff.lint]
+# The standard set (pyflakes + pycodestyle) plus import sorting,
+# modernisation, and bugbear (the kind of check that catches a real bug,
+# like a mutable default argument) - not the exhaustive "ALL" preset,
+# which flags too much pure style opinion to be worth enforcing on a
+# codebase this size.
+select = ["E", "F", "I", "UP", "B"]
+ignore = [
+    # This codebase's comments and prose-style docstrings often run past
+    # a strict wrap column on purpose, to read as sentences rather than
+    # be broken mid-thought. ruff format still wraps CODE to line-length
+    # above; this only stops it flagging comments/strings as errors.
+    "E501",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

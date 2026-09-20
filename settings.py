@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 settings.py
 ===========
@@ -49,7 +48,7 @@ ADMIN_DISPLAY_NAME = os.environ.get("ADMIN_DISPLAY_NAME", "Admin").strip()
 # know before they can do anything else.
 DEFAULT_USER_PASSWORD = os.environ.get("DEFAULT_USER_PASSWORD") or "Abc@123456789"
 
-def addresses(raw):
+def addresses(raw: str | None) -> list[str]:
     """One recipient or several, however they were written.
 
     Outlook separates addresses with semicolons and a mailto: URL with
